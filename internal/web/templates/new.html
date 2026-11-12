@@ -1,0 +1,31 @@
+{{define "content"}}
+<section class="card form-card">
+  <h1>Alta de profesional</h1>
+  <p class="muted">Registramos al médico en la clínica y pedimos su verificación DoctorID. Si aún no tiene DoctorID, recibirás la dirección del Portal de Emisión para enviársela.</p>
+  <form method="post" action="/profesionales" class="form" novalidate>
+    <label>Nombre y apellidos
+      <input name="full_name" value="{{.Form.full_name}}" required autocomplete="off">
+      {{with .Errors}}{{with .full_name}}<span class="error-text">{{.}}</span>{{end}}{{end}}
+    </label>
+    <div class="row">
+      <label>DNI, NIE o pasaporte
+        <input name="administrative_number" value="{{.Form.administrative_number}}" maxlength="24" required autocomplete="off" class="mono">
+        {{with .Errors}}{{with .administrative_number}}<span class="error-text">{{.}}</span>{{end}}{{end}}
+      </label>
+      <label>Nº de colegiado
+        <input name="collegiate_number" value="{{.Form.collegiate_number}}" inputmode="numeric" maxlength="9" required autocomplete="off" class="mono">
+        {{with .Errors}}{{with .collegiate_number}}<span class="error-text">{{.}}</span>{{end}}{{end}}
+      </label>
+    </div>
+    <div class="row">
+      <label>Especialidad <span class="muted">(opcional)</span>
+        <input name="specialty" value="{{.Form.specialty}}" autocomplete="off">
+      </label>
+      <label>Correo del profesional <span class="muted">(opcional)</span>
+        <input name="email" type="email" value="{{.Form.email}}" autocomplete="off">
+      </label>
+    </div>
+    <button type="submit" class="primary">Dar de alta y verificar</button>
+  </form>
+</section>
+{{end}}

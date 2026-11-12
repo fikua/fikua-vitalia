@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · Clínica Vitalia</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="/profesionales">
+      <img src="/static/favicon.svg" alt="" width="28" height="28">
+      <span><strong>Clínica Vitalia</strong><small>Portal de admisión de profesionales</small></span>
+    </a>
+    {{if .Nav}}
+    <nav>
+      <a href="/profesionales" {{if eq .Nav "list"}}aria-current="page"{{end}}>Profesionales</a>
+      <a href="/profesionales/nuevo" {{if eq .Nav "new"}}aria-current="page"{{end}}>Alta</a>
+      <a href="/registro" {{if eq .Nav "log"}}aria-current="page"{{end}}>Registro técnico</a>
+      <form method="post" action="/logout"><button class="link" type="submit">Salir</button></form>
+    </nav>
+    {{end}}
+  </div>
+</header>
+<div class="env">Entorno de pruebas · datos sintéticos · no introduzcas datos personales reales</div>
+<main>
+  {{with .Flash}}
+  <div class="flash {{.Kind}}" role="status">
+    <p><strong>{{.Text}}</strong></p>
+    {{if .Detail}}<p class="mono small">{{.Detail}}</p>{{end}}
+    {{if .Violations}}<ul class="small">{{range .Violations}}<li class="mono">{{.}}</li>{{end}}</ul>{{end}}
+  </div>
+  {{end}}
+  {{template "content" .}}
+</main>
+<footer>Clínica Vitalia es una plataforma ficticia para probar la integración DoctorID. Fikua.</footer>
+</body>
+</html>

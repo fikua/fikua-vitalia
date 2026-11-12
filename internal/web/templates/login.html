@@ -1,0 +1,12 @@
+{{define "content"}}
+<section class="card narrow">
+  <h1>Acceso del personal</h1>
+  <p class="muted">Portal interno de admisión de profesionales sanitarios.</p>
+  {{if .Error}}<p class="error-text" role="alert">{{.Error}}</p>{{end}}
+  <form method="post" action="/login" class="form">
+    <label>Usuario <input name="user" autocomplete="username" required autofocus></label>
+    <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit" class="primary">Entrar</button>
+  </form>
+</section>
+{{end}}

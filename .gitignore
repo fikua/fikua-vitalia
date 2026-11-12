@@ -1,0 +1,16 @@
+# Material that must never reach this public repo:
+# the adapter contract, the gap log and any local secrets.
+/private/
+.env
+*.env
+!.env.example
+
+# Local data
+*.db
+*.db-shm
+*.db-wal
+/data/
+
+# Build output
+/bin/
+/dist/

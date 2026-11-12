@@ -1,0 +1,9 @@
+.git
+.github
+private
+bin
+data
+*.db
+*.db-*
+.env
+*.env

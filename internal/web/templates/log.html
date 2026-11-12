@@ -1,0 +1,38 @@
+{{define "content"}}
+<div class="head">
+  <div>
+    <h1>Registro técnico</h1>
+    <p class="muted">Lo que la clínica ha enviado al sistema DoctorID y los avisos que ha recibido. Evidencia de la integración.</p>
+  </div>
+</div>
+
+<section class="card">
+  <h2>Avisos recibidos (webhooks)</h2>
+  <p class="small muted">Endpoint: <span class="mono">POST {{.WebhookPath}}</span> · firma HMAC-SHA256 en <span class="mono">X-EUDIStack-Signature</span></p>
+  {{if .Webhooks}}
+  {{range .Webhooks}}
+  <details class="event">
+    <summary><span class="badge {{webhookTone .Status}}">{{.Status}}</span> {{eventLabel .Event}} · {{time .ReceivedAt}}{{if .EnrollmentID}} · <span class="mono small">{{.EnrollmentID}}</span>{{end}}</summary>
+    <p class="small">event_id <span class="mono">{{if .EventID}}{{.EventID}}{{else}}—{{end}}</span> · firma {{if .SignatureValid}}válida{{else}}<strong>no válida</strong> ({{.SignatureError}}){{end}}{{if .StatusDetail}} · {{.StatusDetail}}{{end}}</p>
+    <pre>{{pretty .RawBody}}</pre>
+  </details>
+  {{end}}
+  {{else}}<p class="muted">Ninguno todavía.</p>{{end}}
+</section>
+
+<section class="card">
+  <h2>Llamadas al sistema DoctorID</h2>
+  <p class="small muted">Servidor: <span class="mono">{{.AdapterHost}}</span></p>
+  {{if .Calls}}
+  {{range .Calls}}
+  <details class="event">
+    <summary><span class="badge {{if and (ge .Status 200) (lt .Status 300)}}ok{{else}}bad{{end}}">{{if .Status}}{{.Status}}{{else}}error{{end}}</span> <span class="mono">{{.Operation}}</span> · {{time .At}} · {{.Duration}}{{if .ProblemType}} · <span class="mono">{{.ProblemType}}</span>{{end}}</summary>
+    <p class="small mono">{{.Method}} {{.Path}}</p>
+    {{if .Error}}<p class="small error-text">{{.Error}}</p>{{end}}
+    {{if .RequestBody}}<p class="small muted">Petición</p><pre>{{pretty .RequestBody}}</pre>{{end}}
+    {{if .ResponseBody}}<p class="small muted">Respuesta{{if .RetryAfter}} · Retry-After {{.RetryAfter}}{{end}}</p><pre>{{pretty .ResponseBody}}</pre>{{end}}
+  </details>
+  {{end}}
+  {{else}}<p class="muted">Ninguna.</p>{{end}}
+</section>
+{{end}}

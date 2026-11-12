@@ -1,0 +1,37 @@
+{{define "content"}}
+<div class="head">
+  <div>
+    <h1>Profesionales</h1>
+    <p class="muted">Médicos de la clínica y el estado de su verificación con DoctorID.</p>
+  </div>
+  <a class="button primary" href="/profesionales/nuevo">Dar de alta un profesional</a>
+</div>
+
+{{if .Pending}}
+<div class="notice action">{{.Pending}} {{if eq .Pending 1}}profesional tiene{{else}}profesionales tienen{{end}} su DoctorID listo para revisar.</div>
+{{end}}
+
+{{if .Rows}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Profesional</th><th>Nº colegiado</th><th>Estado DoctorID</th><th>Última actualización</th></tr></thead>
+  <tbody>
+  {{range .Rows}}
+  <tr>
+    <td><a href="/profesionales/{{.ID}}"><strong>{{.FullName}}</strong></a>{{if .Specialty}}<br><span class="muted small">{{.Specialty}}</span>{{end}}</td>
+    <td class="mono">{{.CollegiateNumber}}</td>
+    <td>{{with .Latest}}<span class="badge {{stateTone .State}}">{{stateLabel .State}}</span>{{if .InvalidatedReason}} <span class="badge bad">DoctorID {{if eq .InvalidatedReason "renew"}}en renovación{{else}}revocado{{end}}</span>{{end}}{{else}}<span class="badge off">Sin inscripción</span>{{end}}</td>
+    <td class="small">{{with .Latest}}{{time .SyncedAt}}{{else}}{{time .CreatedAt}}{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<section class="card empty">
+  <h2>Aún no hay profesionales</h2>
+  <p>Da de alta al primero con su DNI, NIE o pasaporte y su número de colegiado.</p>
+  <a class="button primary" href="/profesionales/nuevo">Dar de alta un profesional</a>
+</section>
+{{end}}
+{{end}}
