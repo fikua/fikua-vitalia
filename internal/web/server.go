@@ -63,6 +63,7 @@ func New(cfg Config, st *store.Store, svc *enrollment.Service, webhook http.Hand
 		"stateLabel": stateLabel, "stateTone": stateTone, "causeLabel": causeLabel,
 		"time": s.fmtTime, "timep": s.fmtTimePtr, "pretty": prettyJSON, "deref": deref,
 		"dataValue": dataValue, "eventLabel": eventLabel, "webhookTone": webhookTone,
+		"initials": initials, "filterHref": filterHref, "operationLabel": operationLabel,
 	}
 	pages, err := fs.Glob(templateFS, "templates/*.html")
 	if err != nil {
@@ -138,14 +139,21 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	counts := map[string]int{}
+	filter := r.URL.Query().Get("estado")
+	if _, ok := filterLabels[filter]; !ok {
+		filter = ""
+	}
+	counts := map[string]int{"": len(rows)}
+	var shown []store.PractitionerRow
 	for _, row := range rows {
-		if row.Latest != nil {
-			counts[string(row.Latest.State)]++
+		g := groupOf(row.Latest)
+		counts[g]++
+		if filter == "" || filter == g {
+			shown = append(shown, row)
 		}
 	}
-	s.render(w, r, "list.html", map[string]any{"Title": "Profesionales", "Rows": rows,
-		"Pending": counts[string(adapter.PendingConfirmation)], "Nav": "list"})
+	s.render(w, r, "list.html", map[string]any{"Title": "Profesionales", "Rows": shown, "Total": len(rows),
+		"Counts": counts, "Filter": filter, "Filters": filterOrder, "FilterLabels": filterLabels, "Nav": "list"})
 }
 
 func (s *Server) newForm(w http.ResponseWriter, r *http.Request) {
@@ -219,15 +227,19 @@ func (s *Server) detail(w http.ResponseWriter, r *http.Request) {
 		cur := enrollView{Enrollment: list[0], E: list[0].Decoded()}
 		cur.Checks = compare(p, cur.E)
 		data["Current"] = cur
+		data["Steps"] = steps(cur.State)
 		data["History"] = list[1:]
-		if data["Webhooks"], err = s.store.WebhooksOf(ctx, cur.ID); err != nil {
+		hooks, err := s.store.WebhooksOf(ctx, cur.ID)
+		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
-		if data["Calls"], err = s.store.CallsOf(ctx, cur.ID); err != nil {
+		calls, err := s.store.CallsOf(ctx, cur.ID)
+		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
+		data["Activity"] = activity(hooks, calls)
 	}
 	s.render(w, r, "detail.html", data)
 }

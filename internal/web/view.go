@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -148,7 +149,7 @@ func compare(p store.Practitioner, e adapter.Enrollment) []check {
 		{Label: "Nº de colegiado", Ours: p.CollegiateNumber, Theirs: e.CollegiateNumber, Match: p.CollegiateNumber == e.CollegiateNumber},
 	}
 	if pan := str("personal_administrative_number"); d["personal_administrative_number"] != nil {
-		checks = append(checks, check{Label: "personal_administrative_number", Ours: p.AdministrativeNumber + " / " + p.CollegiateNumber,
+		checks = append(checks, check{Label: "Nº administrativo en el DoctorID", Ours: p.AdministrativeNumber + " / " + p.CollegiateNumber,
 			Theirs: pan, Match: pan == p.AdministrativeNumber || pan == p.CollegiateNumber})
 	}
 	if p.Specialty != "" {
@@ -169,4 +170,171 @@ func fold(s string) string {
 		b.WriteRune(r)
 	}
 	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// ------------------------------------------------------------ list grouping
+
+// Groups the operator filters the list by.
+const (
+	groupReview   = "revision"
+	groupWaiting  = "espera"
+	groupIssues   = "incidencias"
+	groupVerified = "verificados"
+	groupClosed   = "cerrados"
+)
+
+var filterOrder = []string{"", groupReview, groupWaiting, groupIssues, groupVerified, groupClosed}
+
+var filterLabels = map[string]string{
+	"":            "Todos",
+	groupReview:   "Por revisar",
+	groupWaiting:  "Esperando al médico",
+	groupIssues:   "Incidencias",
+	groupVerified: "Verificados",
+	groupClosed:   "Cerrados",
+}
+
+func groupOf(e *store.Enrollment) string {
+	if e == nil {
+		return groupIssues
+	}
+	if e.InvalidatedReason != "" {
+		return groupIssues
+	}
+	switch e.State {
+	case adapter.PendingConfirmation:
+		return groupReview
+	case adapter.Initiated:
+		return groupWaiting
+	case adapter.PendingAuthSources:
+		return groupIssues
+	case adapter.Completed:
+		return groupVerified
+	}
+	return groupClosed
+}
+
+// initials of a full name, for the avatar.
+func initials(name string) string {
+	var out []rune
+	for _, w := range strings.Fields(name) {
+		r := []rune(w)
+		if len(r) > 0 && unicode.IsLetter(r[0]) {
+			out = append(out, unicode.ToUpper(r[0]))
+		}
+		if len(out) == 2 {
+			break
+		}
+	}
+	return string(out)
+}
+
+// --------------------------------------------------------------- progress
+
+type step struct {
+	Label, Hint string
+	Status      string // done | current | failed | todo
+}
+
+// steps maps the enrolment state onto the clinic's four-step journey.
+func steps(s adapter.State) []step {
+	st := []step{
+		{Label: "Alta en Vitalia", Hint: "Ficha e inscripción enviadas", Status: "done"},
+		{Label: "DoctorID del médico", Hint: "Lo obtiene en el Portal de Emisión", Status: "todo"},
+		{Label: "Revisión de datos", Hint: "Admisión compara y confirma", Status: "todo"},
+		{Label: "Verificado", Hint: "Puede identificarse con DoctorID", Status: "todo"},
+	}
+	switch s {
+	case adapter.Initiated:
+		st[1].Status = "current"
+	case adapter.PendingAuthSources:
+		st[1].Status, st[1].Hint = "blocked", "Su colegio debe corregir sus datos"
+	case adapter.RejectedByRegistry:
+		st[1].Status = "failed"
+	case adapter.PendingConfirmation:
+		st[1].Status, st[2].Status = "done", "current"
+	case adapter.Completed:
+		st[1].Status, st[2].Status, st[3].Status = "done", "done", "done"
+	case adapter.Expired, adapter.Cancelled:
+		st[1].Status = "failed"
+	}
+	return st
+}
+
+// --------------------------------------------------------------- activity
+
+type activityItem struct {
+	At     time.Time
+	Kind   string // in | out
+	Title  string
+	Meta   string
+	Tone   string
+	Note   string
+	Bodies []labelled
+}
+
+type labelled struct{ Label, Body string }
+
+// activity merges received webhooks and outgoing calls into one timeline,
+// newest first.
+func activity(hooks []store.WebhookEvent, calls []adapter.Call) []activityItem {
+	var out []activityItem
+	for _, h := range hooks {
+		sig := "firma válida"
+		if !h.SignatureValid {
+			sig = "firma no válida: " + h.SignatureError
+		}
+		note := h.StatusDetail
+		out = append(out, activityItem{At: h.ReceivedAt, Kind: "in", Title: "Aviso recibido · " + eventLabel(h.Event),
+			Meta: h.Status + " · " + sig, Tone: webhookTone(h.Status), Note: note,
+			Bodies: []labelled{{"Cuerpo del aviso", h.RawBody}}})
+	}
+	for _, c := range calls {
+		tone := "bad"
+		if c.Status >= 200 && c.Status < 300 {
+			tone = "ok"
+		}
+		status := "sin respuesta"
+		if c.Status != 0 {
+			status = fmt.Sprintf("HTTP %d", c.Status)
+		}
+		if c.ProblemType != "" {
+			status += " · " + c.ProblemType
+		}
+		if c.RetryAfter != "" {
+			status += " · Retry-After " + c.RetryAfter
+		}
+		it := activityItem{At: c.At, Kind: "out", Title: "Llamada · " + operationLabel(c.Operation),
+			Meta: c.Method + " " + c.Path + " · " + status, Tone: tone, Note: c.Error}
+		if c.RequestBody != "" {
+			it.Bodies = append(it.Bodies, labelled{"Petición", c.RequestBody})
+		}
+		if c.ResponseBody != "" {
+			it.Bodies = append(it.Bodies, labelled{"Respuesta", c.ResponseBody})
+		}
+		out = append(out, it)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
+	return out
+}
+
+func operationLabel(op string) string {
+	switch op {
+	case "createEnrollment":
+		return "inscribir"
+	case "getEnrollment":
+		return "consultar estado"
+	case "confirmEnrollment":
+		return "confirmar o rechazar"
+	case "cancelEnrollment":
+		return "cancelar"
+	}
+	return op
+}
+
+func filterHref(f string) string {
+	if f == "" {
+		return "/profesionales"
+	}
+	return "/profesionales?estado=" + f
 }

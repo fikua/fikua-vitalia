@@ -1,12 +1,25 @@
 {{define "content"}}
-<section class="card narrow">
-  <h1>Acceso del personal</h1>
-  <p class="muted">Portal interno de admisión de profesionales sanitarios.</p>
-  {{if .Error}}<p class="error-text" role="alert">{{.Error}}</p>{{end}}
-  <form method="post" action="/login" class="form">
-    <label>Usuario <input name="user" autocomplete="username" required autofocus></label>
-    <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
-    <button type="submit" class="primary">Entrar</button>
-  </form>
+<section class="login">
+  <div class="wrap login-grid">
+    <div class="login-intro">
+      <p class="eyebrow">Portal de admisión de profesionales</p>
+      <h1>Incorpora a tus médicos con su identidad profesional verificada</h1>
+      <ul class="feature-list">
+        <li><span class="feature-icon"><svg class="i"><use href="#i-user-plus"/></svg></span><span><strong>Alta en un minuto</strong>Con su documento y su número de colegiado.</span></li>
+        <li><span class="feature-icon"><svg class="i"><use href="#i-shield"/></svg></span><span><strong>Verificación con DoctorID</strong>Datos del colegio, sin papeles ni fotocopias.</span></li>
+        <li><span class="feature-icon"><svg class="i"><use href="#i-activity"/></svg></span><span><strong>Trazabilidad completa</strong>Cada aviso y cada consulta quedan registrados.</span></li>
+      </ul>
+    </div>
+    <div class="card login-card">
+      <h2>Acceso del personal</h2>
+      <p class="muted">Identifícate con tu cuenta de admisión.</p>
+      {{if .Error}}<p class="field-error" role="alert"><svg class="i"><use href="#i-alert"/></svg>{{.Error}}</p>{{end}}
+      <form method="post" action="/login" class="form">
+        <label>Usuario <input name="user" autocomplete="username" required autofocus></label>
+        <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit" class="primary block">Entrar<svg class="i"><use href="#i-arrow"/></svg></button>
+      </form>
+    </div>
+  </div>
 </section>
 {{end}}

@@ -1,37 +1,78 @@
 {{define "content"}}
-<div class="head">
-  <div>
-    <h1>Profesionales</h1>
-    <p class="muted">Médicos de la clínica y el estado de su verificación con DoctorID.</p>
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Equipo de admisión</p>
+    <h1>¿Qué necesitas hacer hoy?</h1>
+    <div class="quick-grid">
+      <a class="quick-card" href="/profesionales/nuevo">
+        <span class="quick-icon"><svg class="i"><use href="#i-user-plus"/></svg></span>
+        <span><strong>Dar de alta un profesional</strong><small>Registra al médico y pide su verificación DoctorID.</small></span>
+        <svg class="i quick-arrow"><use href="#i-arrow"/></svg>
+      </a>
+      <a class="quick-card {{if index .Counts "revision"}}attention{{end}}" href="/profesionales?estado=revision">
+        <span class="quick-icon"><svg class="i"><use href="#i-clipboard"/></svg></span>
+        <span><strong>Revisar datos pendientes</strong><small>{{with index .Counts "revision"}}{{.}} {{if eq . 1}}profesional espera{{else}}profesionales esperan{{end}} tu confirmación.{{else}}No hay nada pendiente de revisar.{{end}}</small></span>
+        <svg class="i quick-arrow"><use href="#i-arrow"/></svg>
+      </a>
+      <a class="quick-card" href="/registro">
+        <span class="quick-icon"><svg class="i"><use href="#i-activity"/></svg></span>
+        <span><strong>Consultar el registro técnico</strong><small>Llamadas al sistema DoctorID y avisos recibidos.</small></span>
+        <svg class="i quick-arrow"><use href="#i-arrow"/></svg>
+      </a>
+    </div>
   </div>
-  <a class="button primary" href="/profesionales/nuevo">Dar de alta un profesional</a>
-</div>
-
-{{if .Pending}}
-<div class="notice action">{{.Pending}} {{if eq .Pending 1}}profesional tiene{{else}}profesionales tienen{{end}} su DoctorID listo para revisar.</div>
-{{end}}
-
-{{if .Rows}}
-<div class="table-wrap">
-<table>
-  <thead><tr><th>Profesional</th><th>Nº colegiado</th><th>Estado DoctorID</th><th>Última actualización</th></tr></thead>
-  <tbody>
-  {{range .Rows}}
-  <tr>
-    <td><a href="/profesionales/{{.ID}}"><strong>{{.FullName}}</strong></a>{{if .Specialty}}<br><span class="muted small">{{.Specialty}}</span>{{end}}</td>
-    <td class="mono">{{.CollegiateNumber}}</td>
-    <td>{{with .Latest}}<span class="badge {{stateTone .State}}">{{stateLabel .State}}</span>{{if .InvalidatedReason}} <span class="badge bad">DoctorID {{if eq .InvalidatedReason "renew"}}en renovación{{else}}revocado{{end}}</span>{{end}}{{else}}<span class="badge off">Sin inscripción</span>{{end}}</td>
-    <td class="small">{{with .Latest}}{{time .SyncedAt}}{{else}}{{time .CreatedAt}}{{end}}</td>
-  </tr>
-  {{end}}
-  </tbody>
-</table>
-</div>
-{{else}}
-<section class="card empty">
-  <h2>Aún no hay profesionales</h2>
-  <p>Da de alta al primero con su DNI, NIE o pasaporte y su número de colegiado.</p>
-  <a class="button primary" href="/profesionales/nuevo">Dar de alta un profesional</a>
 </section>
-{{end}}
+
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><span class="stat-icon blue"><svg class="i"><use href="#i-users"/></svg></span><span><strong>{{.Total}}</strong>Profesionales</span></div>
+    <div class="stat"><span class="stat-icon teal"><svg class="i"><use href="#i-clipboard"/></svg></span><span><strong>{{index .Counts "revision"}}</strong>Por revisar</span></div>
+    <div class="stat"><span class="stat-icon sky"><svg class="i"><use href="#i-clock"/></svg></span><span><strong>{{index .Counts "espera"}}</strong>Esperando al médico</span></div>
+    <div class="stat"><span class="stat-icon green"><svg class="i"><use href="#i-check"/></svg></span><span><strong>{{index .Counts "verificados"}}</strong>Verificados</span></div>
+  </div>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Profesionales</h2>
+      <nav class="tabs" aria-label="Filtrar por estado">
+        {{range .Filters}}
+        <a href="{{filterHref .}}" {{if eq . $.Filter}}aria-current="true"{{end}}>{{index $.FilterLabels .}} <span class="count">{{index $.Counts .}}</span></a>
+        {{end}}
+      </nav>
+    </div>
+
+    {{if .Rows}}
+    <ul class="people">
+      {{range .Rows}}
+      <li>
+        <a class="person" href="/profesionales/{{.ID}}">
+          <span class="avatar">{{initials .FullName}}</span>
+          <span class="person-main">
+            <strong>{{.FullName}}</strong>
+            <span class="muted small">{{if .Specialty}}{{.Specialty}} · {{end}}Colegiado <span class="mono">{{.CollegiateNumber}}</span></span>
+          </span>
+          <span class="person-state">
+            {{with .Latest}}
+              <span class="pill {{stateTone .State}}">{{stateLabel .State}}</span>
+              {{if .InvalidatedReason}}<span class="pill bad">DoctorID {{if eq .InvalidatedReason "renew"}}en renovación{{else}}revocado{{end}}</span>{{end}}
+            {{else}}<span class="pill bad">Sin inscripción</span>{{end}}
+          </span>
+          <span class="person-date small muted">{{with .Latest}}{{time .SyncedAt}}{{else}}{{time .CreatedAt}}{{end}}</span>
+          <svg class="i chevron"><use href="#i-chevron"/></svg>
+        </a>
+      </li>
+      {{end}}
+    </ul>
+    {{else if .Total}}
+    <div class="card empty"><p>No hay profesionales en «{{index .FilterLabels .Filter}}».</p><a class="button" href="/profesionales">Ver todos</a></div>
+    {{else}}
+    <div class="card empty">
+      <span class="empty-icon"><svg class="i"><use href="#i-steth"/></svg></span>
+      <h3>Aún no hay profesionales</h3>
+      <p class="muted">Da de alta al primero con su DNI, NIE o pasaporte y su número de colegiado.</p>
+      <a class="button primary" href="/profesionales/nuevo"><svg class="i"><use href="#i-user-plus"/></svg>Dar de alta un profesional</a>
+    </div>
+    {{end}}
+  </section>
+</div>
 {{end}}

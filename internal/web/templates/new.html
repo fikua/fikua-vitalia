@@ -1,31 +1,53 @@
 {{define "content"}}
-<section class="card form-card">
-  <h1>Alta de profesional</h1>
-  <p class="muted">Registramos al médico en la clínica y pedimos su verificación DoctorID. Si aún no tiene DoctorID, recibirás la dirección del Portal de Emisión para enviársela.</p>
-  <form method="post" action="/profesionales" class="form" novalidate>
-    <label>Nombre y apellidos
-      <input name="full_name" value="{{.Form.full_name}}" required autocomplete="off">
-      {{with .Errors}}{{with .full_name}}<span class="error-text">{{.}}</span>{{end}}{{end}}
-    </label>
-    <div class="row">
-      <label>DNI, NIE o pasaporte
-        <input name="administrative_number" value="{{.Form.administrative_number}}" maxlength="24" required autocomplete="off" class="mono">
-        {{with .Errors}}{{with .administrative_number}}<span class="error-text">{{.}}</span>{{end}}{{end}}
-      </label>
-      <label>Nº de colegiado
-        <input name="collegiate_number" value="{{.Form.collegiate_number}}" inputmode="numeric" maxlength="9" required autocomplete="off" class="mono">
-        {{with .Errors}}{{with .collegiate_number}}<span class="error-text">{{.}}</span>{{end}}{{end}}
-      </label>
-    </div>
-    <div class="row">
-      <label>Especialidad <span class="muted">(opcional)</span>
-        <input name="specialty" value="{{.Form.specialty}}" autocomplete="off">
-      </label>
-      <label>Correo del profesional <span class="muted">(opcional)</span>
-        <input name="email" type="email" value="{{.Form.email}}" autocomplete="off">
-      </label>
-    </div>
-    <button type="submit" class="primary">Dar de alta y verificar</button>
-  </form>
+<section class="hero hero-compact">
+  <div class="wrap">
+    <p class="crumbs"><a href="/profesionales">Profesionales</a> <svg class="i"><use href="#i-chevron"/></svg> Alta</p>
+    <h1>Alta de profesional</h1>
+    <p class="hero-lead">Registramos al médico en la clínica y pedimos su verificación con DoctorID.</p>
+  </div>
 </section>
+
+<div class="wrap two-col">
+  <section class="card">
+    <h2>Datos del profesional</h2>
+    <form method="post" action="/profesionales" class="form" novalidate>
+      <label>Nombre y apellidos
+        <input name="full_name" value="{{.Form.full_name}}" required autocomplete="off" {{with .Errors}}{{with .full_name}}aria-invalid="true"{{end}}{{end}}>
+        {{with .Errors}}{{with .full_name}}<span class="field-error">{{.}}</span>{{end}}{{end}}
+      </label>
+      <div class="row">
+        <label>DNI, NIE o pasaporte
+          <input name="administrative_number" value="{{.Form.administrative_number}}" maxlength="24" required autocomplete="off" class="mono" {{with .Errors}}{{with .administrative_number}}aria-invalid="true"{{end}}{{end}}>
+          {{with .Errors}}{{with .administrative_number}}<span class="field-error">{{.}}</span>{{end}}{{end}}
+        </label>
+        <label>Nº de colegiado
+          <input name="collegiate_number" value="{{.Form.collegiate_number}}" inputmode="numeric" maxlength="9" required autocomplete="off" class="mono" {{with .Errors}}{{with .collegiate_number}}aria-invalid="true"{{end}}{{end}}>
+          {{with .Errors}}{{with .collegiate_number}}<span class="field-error">{{.}}</span>{{else}}<span class="hint">9 dígitos</span>{{end}}{{else}}<span class="hint">9 dígitos</span>{{end}}
+        </label>
+      </div>
+      <div class="row">
+        <label><span>Especialidad <span class="optional">· opcional</span></span>
+          <input name="specialty" value="{{.Form.specialty}}" autocomplete="off">
+        </label>
+        <label><span>Correo del profesional <span class="optional">· opcional</span></span>
+          <input name="email" type="email" value="{{.Form.email}}" autocomplete="off">
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="primary"><svg class="i"><use href="#i-shield"/></svg>Dar de alta y verificar</button>
+        <a class="button ghost" href="/profesionales">Cancelar</a>
+      </div>
+    </form>
+  </section>
+
+  <aside class="card soft">
+    <h2>Qué pasará después</h2>
+    <ol class="next-steps">
+      <li><strong>Pedimos su verificación</strong><span>Enviamos el documento y el número de colegiado al sistema DoctorID.</span></li>
+      <li><strong>Si aún no tiene DoctorID</strong><span>Te daremos la dirección del Portal de Emisión para que se la envíes. Lo obtendrá con su certificado.</span></li>
+      <li><strong>Revisas sus datos</strong><span>Cuando lo tenga, verás los datos del colegio junto a tu ficha para confirmarlos.</span></li>
+    </ol>
+    <p class="small muted">Entorno de pruebas: usa solo datos inventados.</p>
+  </aside>
+</div>
 {{end}}
