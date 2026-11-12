@@ -4,6 +4,10 @@
 // authentication and an ES256 ID Token with the DoctorID attributes. Its
 // login page replaces the wallet: the person picks which DoctorID to present.
 //
+// Besides the clinic, it can register clients that authenticate with a
+// client secret (client_secret_basic or client_secret_post): that is how a
+// workforce identity provider such as Authentik federates it.
+//
 // For tests and demos only.
 package idpstub
 
@@ -13,6 +17,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -30,11 +35,13 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 )
 
-// Client is the one registered relying party.
+// Client is a registered relying party. It authenticates with
+// private_key_jwt (JWKSURL) or, when Secret is set, with that client secret.
 type Client struct {
 	ID          string
 	RedirectURI string
 	JWKSURL     string // where the IdP fetches the client's public keys
+	Secret      string // client_secret_basic / client_secret_post instead of private_key_jwt
 }
 
 // Holder is a DoctorID the simulated wallet can present.
@@ -49,10 +56,12 @@ type Holder struct {
 // IdP is the simulated OpenID Provider.
 type IdP struct {
 	Issuer  string
-	Client  Client
+	Client  Client   // the clinic
+	Extra   []Client // more relying parties, e.g. a federating identity provider
 	Holders func() []Holder
 	HTTP    *http.Client
 	Now     func() time.Time
+	Key     *ecdsa.PrivateKey // ID Token signing key; generated when nil
 
 	once  sync.Once
 	key   *ecdsa.PrivateKey
@@ -64,6 +73,7 @@ type IdP struct {
 }
 
 type authRequest struct {
+	Client                         Client
 	State, Nonce, Challenge, Scope string
 	expires                        time.Time
 }
@@ -82,7 +92,10 @@ var Outsider = Holder{CollegiateNumber: "289999990", GivenName: "MARTA", FamilyN
 
 func (p *IdP) init() {
 	p.once.Do(func() {
-		p.key, _ = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		p.key = p.Key
+		if p.key == nil {
+			p.key, _ = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		}
 		thumb, _ := (&jose.JSONWebKey{Key: &p.key.PublicKey}).Thumbprint(crypto.SHA256)
 		p.kid = base64.RawURLEncoding.EncodeToString(thumb)
 		p.reqs, p.codes, p.jtis = map[string]authRequest{}, map[string]grant{}, map[string]time.Time{}
@@ -107,6 +120,16 @@ func (p *IdP) Handler() http.Handler {
 	return mux
 }
 
+// client returns the registered client with that id.
+func (p *IdP) client(id string) (Client, bool) {
+	for _, c := range append([]Client{p.Client}, p.Extra...) {
+		if c.ID != "" && c.ID == id {
+			return c, true
+		}
+	}
+	return Client{}, false
+}
+
 func (p *IdP) discovery(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"issuer":                                         p.Issuer,
@@ -117,7 +140,7 @@ func (p *IdP) discovery(w http.ResponseWriter, _ *http.Request) {
 		"grant_types_supported":                          []string{"authorization_code"},
 		"subject_types_supported":                        []string{"public"},
 		"id_token_signing_alg_values_supported":          []string{"ES256"},
-		"token_endpoint_auth_methods_supported":          []string{"private_key_jwt"},
+		"token_endpoint_auth_methods_supported":          []string{"private_key_jwt", "client_secret_basic", "client_secret_post"},
 		"code_challenge_methods_supported":               []string{"S256"},
 		"scopes_supported":                               []string{"openid", "profile", "doctorid"},
 		"acr_values_supported":                           []string{"http://eidas.europa.eu/LoA/high"},
@@ -133,31 +156,32 @@ func (p *IdP) authorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	// Errors about the client or its redirect URI are shown here and never
 	// redirected (OIDC Core 3.1.2.6).
-	if q.Get("client_id") != p.Client.ID || q.Get("redirect_uri") != p.Client.RedirectURI {
+	client, ok := p.client(q.Get("client_id"))
+	if !ok || q.Get("redirect_uri") != client.RedirectURI {
 		http.Error(w, "Unknown client or redirect URI", http.StatusBadRequest)
 		return
 	}
 	scopes := strings.Fields(q.Get("scope"))
 	switch {
 	case q.Get("response_type") != "code", !slices.Contains(scopes, "openid"):
-		p.redirectError(w, r, q.Get("state"), "invalid_request", "response_type code and scope openid are required")
+		p.redirectError(w, r, client, q.Get("state"), "invalid_request", "response_type code and scope openid are required")
 		return
 	case q.Get("code_challenge") == "" || q.Get("code_challenge_method") != "S256":
-		p.redirectError(w, r, q.Get("state"), "invalid_request", "PKCE S256 is required")
+		p.redirectError(w, r, client, q.Get("state"), "invalid_request", "PKCE S256 is required")
 		return
-	case q.Get("nonce") == "":
-		p.redirectError(w, r, q.Get("state"), "invalid_request", "nonce is required")
+	case q.Get("nonce") == "" && client.Secret == "": // the clinic always sends one; a federating IdP may not
+		p.redirectError(w, r, client, q.Get("state"), "invalid_request", "nonce is required")
 		return
 	}
 	id := randomID()
 	p.mu.Lock()
-	p.reqs[id] = authRequest{State: q.Get("state"), Nonce: q.Get("nonce"), Challenge: q.Get("code_challenge"),
+	p.reqs[id] = authRequest{Client: client, State: q.Get("state"), Nonce: q.Get("nonce"), Challenge: q.Get("code_challenge"),
 		Scope: q.Get("scope"), expires: p.Now().Add(5 * time.Minute)}
 	p.mu.Unlock()
 
 	holders := append(p.Holders(), Outsider)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = loginPage.Execute(w, map[string]any{"Req": id, "Holders": holders, "Client": p.Client.ID})
+	_ = loginPage.Execute(w, map[string]any{"Req": id, "Holders": holders, "Client": client.ID})
 }
 
 func (p *IdP) decide(w http.ResponseWriter, r *http.Request) {
@@ -171,7 +195,7 @@ func (p *IdP) decide(w http.ResponseWriter, r *http.Request) {
 	}
 	choice := r.PostFormValue("doctorid")
 	if choice == "" {
-		p.redirectError(w, r, req.State, "access_denied", "")
+		p.redirectError(w, r, req.Client, req.State, "access_denied", "")
 		return
 	}
 	var holder *Holder
@@ -182,27 +206,27 @@ func (p *IdP) decide(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if holder == nil {
-		p.redirectError(w, r, req.State, "access_denied", "")
+		p.redirectError(w, r, req.Client, req.State, "access_denied", "")
 		return
 	}
 	code := randomID()
 	p.mu.Lock()
 	p.codes[code] = grant{authRequest: req, holder: *holder, authAt: p.Now(), expires: p.Now().Add(time.Minute)}
 	p.mu.Unlock()
-	p.redirect(w, r, url.Values{"code": {code}, "state": {req.State}})
+	p.redirect(w, r, req.Client, url.Values{"code": {code}, "state": {req.State}})
 }
 
-func (p *IdP) redirectError(w http.ResponseWriter, r *http.Request, state, code, desc string) {
+func (p *IdP) redirectError(w http.ResponseWriter, r *http.Request, c Client, state, code, desc string) {
 	v := url.Values{"error": {code}, "state": {state}}
 	if desc != "" {
 		v.Set("error_description", desc)
 	}
-	p.redirect(w, r, v)
+	p.redirect(w, r, c, v)
 }
 
-func (p *IdP) redirect(w http.ResponseWriter, r *http.Request, v url.Values) {
+func (p *IdP) redirect(w http.ResponseWriter, r *http.Request, c Client, v url.Values) {
 	v.Set("iss", p.Issuer) // RFC 9207
-	http.Redirect(w, r, p.Client.RedirectURI+"?"+v.Encode(), http.StatusFound)
+	http.Redirect(w, r, c.RedirectURI+"?"+v.Encode(), http.StatusFound)
 }
 
 func (p *IdP) token(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +235,8 @@ func (p *IdP) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := r.PostForm
-	if err := p.checkAssertion(r, f); err != nil {
+	client, err := p.authenticate(r, f)
+	if err != nil {
 		w.Header().Set("WWW-Authenticate", "private_key_jwt")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -222,7 +247,7 @@ func (p *IdP) token(w http.ResponseWriter, r *http.Request) {
 	g, ok := p.codes[f.Get("code")]
 	delete(p.codes, f.Get("code"))
 	p.mu.Unlock()
-	if !ok || p.Now().After(g.expires) || f.Get("redirect_uri") != p.Client.RedirectURI {
+	if !ok || p.Now().After(g.expires) || g.Client.ID != client.ID || f.Get("redirect_uri") != client.RedirectURI {
 		tokenError(w, "invalid_grant")
 		return
 	}
@@ -241,8 +266,29 @@ func (p *IdP) token(w http.ResponseWriter, r *http.Request) {
 		"id_token": idToken, "scope": g.Scope})
 }
 
-// checkAssertion verifies the private_key_jwt client assertion against the
-// client's published keys.
+// authenticate identifies the client at the token endpoint: by its client
+// secret (HTTP Basic or form) or by its private_key_jwt assertion.
+func (p *IdP) authenticate(r *http.Request, f url.Values) (Client, error) {
+	if f.Get("client_assertion") == "" {
+		id, secret, basic := r.BasicAuth()
+		if !basic {
+			id, secret = f.Get("client_id"), f.Get("client_secret")
+		}
+		c, ok := p.client(id)
+		if !ok || c.Secret == "" || secret == "" ||
+			subtle.ConstantTimeCompare([]byte(secret), []byte(c.Secret)) != 1 {
+			return Client{}, fmt.Errorf("unknown client or wrong client secret")
+		}
+		return c, nil
+	}
+	if f.Get("client_id") != "" && f.Get("client_id") != p.Client.ID {
+		return Client{}, fmt.Errorf("client_id does not match the assertion")
+	}
+	return p.Client, p.checkAssertion(r, f)
+}
+
+// checkAssertion verifies the clinic's private_key_jwt client assertion
+// against its published keys.
 func (p *IdP) checkAssertion(r *http.Request, f url.Values) error {
 	if f.Get("client_assertion_type") != "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
 		return fmt.Errorf("client_assertion_type is required")
@@ -296,11 +342,14 @@ func (p *IdP) idToken(g grant) (string, error) {
 	now := p.Now()
 	sub := sha256.Sum256([]byte("doctorid|" + g.holder.CollegiateNumber))
 	claims := map[string]any{
-		"iss": p.Issuer, "sub": hex.EncodeToString(sub[:16]), "aud": p.Client.ID,
-		"iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix(), "auth_time": g.authAt.Unix(), "nonce": g.Nonce,
+		"iss": p.Issuer, "sub": hex.EncodeToString(sub[:16]), "aud": g.Client.ID,
+		"iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix(), "auth_time": g.authAt.Unix(),
 		"acr": "http://eidas.europa.eu/LoA/high", "amr": []string{"wallet"}, "credential_type": "doctorid",
 		"given_name": g.holder.GivenName, "family_name": g.holder.FamilyName,
 		"personal_administrative_number": g.holder.CollegiateNumber,
+	}
+	if g.Nonce != "" {
+		claims["nonce"] = g.Nonce
 	}
 	for k, v := range g.holder.Data {
 		if _, taken := claims[k]; !taken && k != "givenName" && k != "familyName" {

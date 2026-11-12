@@ -245,3 +245,42 @@ func TestParseSigningKey(t *testing.T) {
 		t.Fatal("expected an error")
 	}
 }
+
+// A relying party with a client secret, as Vitalia is for Authentik and
+// Authentik is for the DoctorID identity provider.
+func TestLoginWithClientSecret(t *testing.T) {
+	ctx := context.Background()
+	idp := &idpstub.IdP{Holders: func() []idpstub.Holder {
+		return []idpstub.Holder{{CollegiateNumber: "282810001", GivenName: "LAIA", FamilyName: "PUIG SOLER"}}
+	}}
+	idpSrv := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(idpSrv.Close)
+	idp.Issuer = idpSrv.URL
+	idp.Extra = []idpstub.Client{{ID: "authentik", Secret: "s3cret", RedirectURI: "https://ak.test/source/oauth/callback/doctorid/"}}
+	idpSrv.Config.Handler = idp.Handler()
+
+	run := func(secret string) error {
+		client, err := doctorlogin.New(doctorlogin.Config{Issuer: idpSrv.URL, ClientID: "authentik", Secret: secret,
+			RedirectURL: "https://ak.test/source/oauth/callback/doctorid/", Scopes: []string{"openid"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		e := &env{idp: idpSrv, client: client}
+		q, state := e.login(t, "282810001")
+		id, err := client.Finish(ctx, q, state)
+		if err == nil && (id.CollegiateNumber != "282810001" || id.Claims["aud"] != "authentik") {
+			t.Fatalf("identity = %+v", id)
+		}
+		return err
+	}
+	if err := run("s3cret"); err != nil {
+		t.Fatalf("right secret: %v", err)
+	}
+	if err := run("wrong"); err == nil || !strings.Contains(err.Error(), "invalid_client") {
+		t.Fatalf("wrong secret: %v", err)
+	}
+	if client, _ := doctorlogin.New(doctorlogin.Config{Issuer: idpSrv.URL, ClientID: "authentik", Secret: "s3cret",
+		RedirectURL: "https://ak.test/cb"}); client.JWKS() != nil {
+		t.Fatal("a client secret relying party publishes no JWKS")
+	}
+}

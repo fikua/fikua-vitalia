@@ -14,11 +14,17 @@
       <h2>Acceso de gestión</h2>
       <p class="muted">Solo para el personal de Recursos Humanos y Dirección médica.</p>
       {{if .Error}}<p class="field-error" role="alert"><svg class="i"><use href="#i-alert"/></svg>{{.Error}}</p>{{end}}
+      {{if .SSO}}
+      <a href="/gestion/acceso/clinica" class="button primary block">Entrar con tu cuenta de la clínica<svg class="i"><use href="#i-arrow"/></svg></a>
+      {{end}}
+      {{if .Password}}
+      {{if .SSO}}<p class="small muted login-alt">O con la cuenta de pruebas:</p>{{end}}
       <form method="post" action="/gestion/acceso" class="form">
-        <label>Usuario <input name="user" autocomplete="username" required autofocus></label>
+        <label>Usuario <input name="user" autocomplete="username" required {{if not .SSO}}autofocus{{end}}></label>
         <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
-        <button type="submit" class="primary block">Entrar<svg class="i"><use href="#i-arrow"/></svg></button>
+        <button type="submit" class="{{if .SSO}}secondary{{else}}primary{{end}} block">Entrar<svg class="i"><use href="#i-arrow"/></svg></button>
       </form>
+      {{end}}
       <p class="small muted login-alt">¿Eres médico de la clínica? <a href="/profesional">Entra con tu DoctorID</a>.</p>
     </div>
   </div>

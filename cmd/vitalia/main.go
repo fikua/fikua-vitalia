@@ -53,14 +53,26 @@ func run(logger *slog.Logger) error {
 	if cfg.OIDCIssuer != "" {
 		login, err = doctorlogin.New(doctorlogin.Config{
 			Issuer: cfg.OIDCIssuer, ClientID: cfg.OIDCClientID, RedirectURL: cfg.PublicURL.JoinPath("/profesional/callback").String(),
-			Scopes: cfg.OIDCScopes, ACR: cfg.OIDCACR, SigningKey: cfg.OIDCSigningKey, HTTP: &http.Client{Timeout: 15 * time.Second},
+			Scopes: cfg.OIDCScopes, ACR: cfg.OIDCACR, SigningKey: cfg.OIDCSigningKey, Secret: cfg.OIDCSecret,
+			HTTP: &http.Client{Timeout: 15 * time.Second},
+		})
+		if err != nil {
+			return err
+		}
+	}
+	var staff *doctorlogin.Client
+	if cfg.StaffOIDCIssuer != "" {
+		staff, err = doctorlogin.New(doctorlogin.Config{
+			Issuer: cfg.StaffOIDCIssuer, ClientID: cfg.StaffOIDCClientID, Secret: cfg.StaffOIDCSecret,
+			RedirectURL: cfg.PublicURL.JoinPath("/gestion/callback").String(), Scopes: []string{"openid", "profile", "email"},
+			HTTP: &http.Client{Timeout: 15 * time.Second},
 		})
 		if err != nil {
 			return err
 		}
 	}
 	ui, err := web.New(web.Config{UIUser: cfg.UIUser, UIPassword: cfg.UIPassword, CookieSecure: cfg.CookieSecure,
-		AdapterHost: cfg.AdapterBaseURL.String()}, st, svc, receiver, login, logger)
+		AdapterHost: cfg.AdapterBaseURL.String(), StaffLogin: staff, StaffGroup: cfg.StaffGroup}, st, svc, receiver, login, logger)
 	if err != nil {
 		return err
 	}
@@ -72,11 +84,12 @@ func run(logger *slog.Logger) error {
 	}
 
 	var wg sync.WaitGroup
-	wg.Go(func() { svc.Run(ctx, 30*time.Second) })
+	// Short safety-net interval: it also adopts the directory's enrolments.
+	wg.Go(func() { svc.Run(ctx, 10*time.Second) })
 
 	errc := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "addr", cfg.ListenAddr, "adapter", cfg.AdapterBaseURL.String(), "oidc_issuer", cfg.OIDCIssuer,
+		logger.Info("listening", "addr", cfg.ListenAddr, "adapter", cfg.AdapterBaseURL.String(), "oidc_issuer", cfg.OIDCIssuer, "staff_oidc_issuer", cfg.StaffOIDCIssuer,
 			"token_configured", cfg.AdapterToken != "", "webhook_path", web.WebhookPath)
 		errc <- srv.ListenAndServe()
 	}()

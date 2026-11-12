@@ -35,10 +35,14 @@ var staticFS embed.FS
 
 // Config is the part of the configuration the UI needs.
 type Config struct {
-	UIUser       string
+	UIUser       string // local test account; empty disables the password form
 	UIPassword   string
 	CookieSecure bool
 	AdapterHost  string // shown in the technical log, never the token
+
+	// Staff sign-in with the clinic's identity provider; nil disables it.
+	StaffLogin *doctorlogin.Client
+	StaffGroup string // group the staff member must belong to
 }
 
 // Server serves the UI.
@@ -128,7 +132,7 @@ func (s *Server) Handler() http.Handler {
 	root.HandleFunc("GET /profesional/entrar", s.proStart)
 	root.HandleFunc("GET /profesional/callback", s.proCallback)
 	root.Handle("POST /profesional/salir", cop.Handler(http.HandlerFunc(s.proLogout)))
-	if s.login != nil {
+	if s.login != nil && s.login.JWKS() != nil {
 		root.HandleFunc("GET /.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/jwk-set+json")
 			w.Header().Set("Cache-Control", "public, max-age=300")
@@ -138,6 +142,8 @@ func (s *Server) Handler() http.Handler {
 
 	root.HandleFunc("GET /gestion/acceso", s.loginForm)
 	root.Handle("POST /gestion/acceso", cop.Handler(http.HandlerFunc(s.loginPost)))
+	root.HandleFunc("GET /gestion/acceso/clinica", s.staffStart)
+	root.HandleFunc("GET /gestion/callback", s.staffCallback)
 	root.Handle("/gestion/", s.requireLogin(cop.Handler(admin)))
 	root.Handle("/gestion", s.requireLogin(cop.Handler(admin)))
 

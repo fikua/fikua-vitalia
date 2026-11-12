@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 )
@@ -89,23 +90,85 @@ func (s *Server) requireLogin(next http.Handler) http.Handler {
 }
 
 func (s *Server) loginForm(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, "admin_login.html", map[string]any{"Title": "Acceso a gestión", "Area": "admin-out"})
+	s.renderLogin(w, r, "")
+}
+
+func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errText string) {
+	s.render(w, r, "admin_login.html", map[string]any{"Title": "Acceso a gestión", "Area": "admin-out", "Error": errText,
+		"SSO": s.cfg.StaffLogin != nil, "Password": s.cfg.UIUser != ""})
 }
 
 func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.UIUser == "" {
+		http.NotFound(w, r)
+		return
+	}
 	userOK := equalSecret(r.PostFormValue("user"), s.cfg.UIUser)
 	passOK := equalSecret(r.PostFormValue("password"), s.cfg.UIPassword)
 	if !userOK || !passOK {
 		s.logger.Warn("failed login", "remote", r.RemoteAddr)
 		w.WriteHeader(http.StatusUnauthorized)
-		s.render(w, r, "admin_login.html", map[string]any{"Title": "Acceso a gestión", "Area": "admin-out", "Error": "Usuario o contraseña incorrectos."})
+		s.renderLogin(w, r, "Usuario o contraseña incorrectos.")
 		return
 	}
+	s.startStaffSession(w, r)
+}
+
+func (s *Server) startStaffSession(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: s.sessions.create(), Path: "/", HttpOnly: true,
 		Secure: s.cfg.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: int(sessionTTL.Seconds()),
 	})
 	http.Redirect(w, r, "/gestion/profesionales", http.StatusSeeOther)
+}
+
+const staffStateCookie = "vitalia_staff_state"
+
+// staffStart sends the staff member to the clinic's identity provider.
+func (s *Server) staffStart(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.StaffLogin == nil {
+		http.Redirect(w, r, "/gestion/acceso", http.StatusSeeOther)
+		return
+	}
+	authURL, state, err := s.cfg.StaffLogin.Start(r.Context())
+	if err != nil {
+		s.logger.Error("start staff login", "err", err)
+		w.WriteHeader(http.StatusBadGateway)
+		s.renderLogin(w, r, "El servicio de identidad de la clínica no responde. Inténtalo en unos minutos.")
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: staffStateCookie, Value: state, Path: "/gestion", HttpOnly: true,
+		Secure: s.cfg.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: 600})
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+// staffCallback finishes the staff login: the ID Token must list the
+// staff group.
+func (s *Server) staffCallback(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.StaffLogin == nil {
+		http.NotFound(w, r)
+		return
+	}
+	browserState := ""
+	if c, err := r.Cookie(staffStateCookie); err == nil {
+		browserState = c.Value
+	}
+	http.SetCookie(w, &http.Cookie{Name: staffStateCookie, Value: "", Path: "/gestion", MaxAge: -1, HttpOnly: true, Secure: s.cfg.CookieSecure})
+	id, err := s.cfg.StaffLogin.Finish(r.Context(), r.URL.Query(), browserState)
+	if err != nil {
+		s.logger.Warn("staff login failed", "err", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		s.renderLogin(w, r, "No se ha podido completar el inicio de sesión con la cuenta de la clínica.")
+		return
+	}
+	if !slices.Contains(id.Groups, s.cfg.StaffGroup) {
+		s.logger.Warn("staff login denied: not in the staff group", "subject", id.Subject, "group", s.cfg.StaffGroup)
+		w.WriteHeader(http.StatusForbidden)
+		s.renderLogin(w, r, "Tu cuenta de la clínica no tiene acceso a la gestión de profesionales.")
+		return
+	}
+	s.logger.Info("staff login granted", "subject", id.Subject, "username", id.Username)
+	s.startStaffSession(w, r)
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {

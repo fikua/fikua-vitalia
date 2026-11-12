@@ -2,6 +2,11 @@
 // DoctorID: the clinic is an OpenID Connect client (relying party) of the
 // identity provider, with the Authorization Code Flow, PKCE S256 and
 // private_key_jwt client authentication.
+//
+// The same relying party also signs in against the clinic's own identity
+// provider (Authentik), which federates DoctorID for the physicians and
+// holds the staff accounts. That one authenticates the clinic with a client
+// secret (client_secret_basic) instead of private_key_jwt.
 package doctorlogin
 
 import (
@@ -35,8 +40,9 @@ type Config struct {
 	ClientID    string
 	RedirectURL string
 	Scopes      []string
-	ACR         string // optional eIDAS level, requested as essential
-	SigningKey  *ecdsa.PrivateKey
+	ACR         string            // optional eIDAS level, requested as essential
+	SigningKey  *ecdsa.PrivateKey // private_key_jwt; or
+	Secret      string            // client_secret_basic, when SigningKey is nil
 	HTTP        *http.Client
 	Now         func() time.Time
 }
@@ -48,6 +54,9 @@ type Identity struct {
 	GivenName        string
 	FamilyName       string
 	CollegiateNumber string // personal_administrative_number: the registration number in DoctorID v1
+	Name             string
+	Username         string   // preferred_username
+	Groups           []string // groups, as the clinic's identity provider sends them
 	CredentialType   string
 	ACR              string
 	AMR              []string
@@ -92,8 +101,8 @@ const loginTTL = 10 * time.Minute
 // New builds the client. Discovery happens on first use, so the clinic
 // starts even when the identity provider is down.
 func New(cfg Config) (*Client, error) {
-	if cfg.Issuer == "" || cfg.ClientID == "" || cfg.RedirectURL == "" || cfg.SigningKey == nil {
-		return nil, errors.New("doctorlogin: issuer, client id, redirect URL and signing key are required")
+	if cfg.Issuer == "" || cfg.ClientID == "" || cfg.RedirectURL == "" || (cfg.SigningKey == nil && cfg.Secret == "") {
+		return nil, errors.New("doctorlogin: issuer, client id, redirect URL and a signing key or client secret are required")
 	}
 	if cfg.HTTP == nil {
 		cfg.HTTP = &http.Client{Timeout: 15 * time.Second}
@@ -101,17 +110,24 @@ func New(cfg Config) (*Client, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	jwk := jose.JSONWebKey{Key: &cfg.SigningKey.PublicKey}
-	thumb, err := jwk.Thumbprint(crypto.SHA256)
-	if err != nil {
-		return nil, fmt.Errorf("key thumbprint: %w", err)
+	c := &Client{cfg: cfg, pending: map[string]pendingLogin{}}
+	if cfg.SigningKey != nil {
+		jwk := jose.JSONWebKey{Key: &cfg.SigningKey.PublicKey}
+		thumb, err := jwk.Thumbprint(crypto.SHA256)
+		if err != nil {
+			return nil, fmt.Errorf("key thumbprint: %w", err)
+		}
+		c.keyID = base64.RawURLEncoding.EncodeToString(thumb)
 	}
-	return &Client{cfg: cfg, keyID: base64.RawURLEncoding.EncodeToString(thumb), pending: map[string]pendingLogin{}}, nil
+	return c, nil
 }
 
 // JWKS is the public key set the identity provider uses to check the
-// clinic's client assertions.
+// clinic's client assertions; nil with client secret authentication.
 func (c *Client) JWKS() []byte {
+	if c.cfg.SigningKey == nil {
+		return nil
+	}
 	set := jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{
 		Key: &c.cfg.SigningKey.PublicKey, KeyID: c.keyID, Algorithm: string(jose.ES256), Use: "sig",
 	}}}
@@ -142,6 +158,11 @@ func (c *Client) discover(ctx context.Context) (*oidc.Provider, error) {
 
 func (c *Client) oauth(p *oidc.Provider) *oauth2.Config {
 	ep := p.Endpoint()
+	if c.cfg.SigningKey == nil {
+		ep.AuthStyle = oauth2.AuthStyleInHeader // client_secret_basic
+		return &oauth2.Config{ClientID: c.cfg.ClientID, ClientSecret: c.cfg.Secret, Endpoint: ep,
+			RedirectURL: c.cfg.RedirectURL, Scopes: c.cfg.Scopes}
+	}
 	ep.AuthStyle = oauth2.AuthStyleInParams // client_id in the body, authenticated by the assertion
 	return &oauth2.Config{ClientID: c.cfg.ClientID, Endpoint: ep, RedirectURL: c.cfg.RedirectURL, Scopes: c.cfg.Scopes}
 }
@@ -200,14 +221,17 @@ func (c *Client) Finish(ctx context.Context, q url.Values, browserState string) 
 		return Identity{}, &IdPError{Code: code, Description: q.Get("error_description")}
 	}
 
-	tokenURL := p.Endpoint().TokenURL
-	assertion, err := c.assertion(tokenURL)
-	if err != nil {
-		return Identity{}, err
+	opts := []oauth2.AuthCodeOption{oauth2.VerifierOption(pl.verifier)}
+	if c.cfg.SigningKey != nil {
+		assertion, err := c.assertion(p.Endpoint().TokenURL)
+		if err != nil {
+			return Identity{}, err
+		}
+		opts = append(opts,
+			oauth2.SetAuthURLParam("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"),
+			oauth2.SetAuthURLParam("client_assertion", assertion))
 	}
-	tok, err := c.oauth(p).Exchange(c.ctx(ctx), q.Get("code"), oauth2.VerifierOption(pl.verifier),
-		oauth2.SetAuthURLParam("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"),
-		oauth2.SetAuthURLParam("client_assertion", assertion))
+	tok, err := c.oauth(p).Exchange(c.ctx(ctx), q.Get("code"), opts...)
 	if err != nil {
 		return Identity{}, fmt.Errorf("code exchange: %w", err)
 	}
@@ -259,7 +283,14 @@ func identityOf(idt *oidc.IDToken) (Identity, error) {
 	id := Identity{
 		Issuer: idt.Issuer, Subject: idt.Subject, GivenName: str("given_name"), FamilyName: str("family_name"),
 		CollegiateNumber: str("personal_administrative_number"), CredentialType: str("credential_type"),
-		ACR: str("acr"), Claims: claims,
+		Name: str("name"), Username: str("preferred_username"), ACR: str("acr"), Claims: claims,
+	}
+	if gs, ok := claims["groups"].([]any); ok {
+		for _, g := range gs {
+			if s, ok := g.(string); ok {
+				id.Groups = append(id.Groups, s)
+			}
+		}
 	}
 	switch amr := claims["amr"].(type) {
 	case []any:

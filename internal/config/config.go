@@ -37,9 +37,17 @@ type Config struct {
 	OIDCClientID   string
 	OIDCScopes     []string
 	OIDCACR        string
-	OIDCSigningKey *ecdsa.PrivateKey
+	OIDCSigningKey *ecdsa.PrivateKey // private_key_jwt (the DoctorID IdP directly); or
+	OIDCSecret     string            // client secret (the clinic's IdP, which federates DoctorID)
 
-	// Operator UI.
+	// Sign-in of the management staff with the clinic's identity provider
+	// (Authentik). Disabled when StaffOIDCIssuer is empty.
+	StaffOIDCIssuer   string
+	StaffOIDCClientID string
+	StaffOIDCSecret   string
+	StaffGroup        string // group the ID Token must list in "groups"
+
+	// Operator UI: a local test account, optional when staff sign-in is on.
 	UIUser       string
 	UIPassword   string
 	CookieSecure bool
@@ -85,8 +93,8 @@ func Load(getenv func(string) string) (Config, error) {
 		AdapterTimeout:     duration("VITALIA_ADAPTER_TIMEOUT", "15s"),
 		SignatureTolerance: duration("VITALIA_SIGNATURE_TOLERANCE", "5m"),
 		RefreshOnWebhook:   boolean("VITALIA_REFRESH_ON_WEBHOOK", "true"),
-		UIUser:             required("VITALIA_UI_USER"),
-		UIPassword:         required("VITALIA_UI_PASSWORD"),
+		UIUser:             strings.TrimSpace(getenv("VITALIA_UI_USER")),
+		UIPassword:         strings.TrimSpace(getenv("VITALIA_UI_PASSWORD")),
 		CookieSecure:       boolean("VITALIA_COOKIE_SECURE", "true"),
 	}
 
@@ -114,13 +122,28 @@ func Load(getenv func(string) string) (Config, error) {
 		c.OIDCClientID = get("VITALIA_OIDC_CLIENT_ID", "vitalia")
 		c.OIDCScopes = strings.Fields(get("VITALIA_OIDC_SCOPES", "openid profile doctorid"))
 		c.OIDCACR = strings.TrimSpace(getenv("VITALIA_OIDC_ACR"))
-		if raw := required("VITALIA_OIDC_SIGNING_KEY"); raw != "" {
+		c.OIDCSecret = strings.TrimSpace(getenv("VITALIA_OIDC_CLIENT_SECRET"))
+		if c.OIDCSecret != "" {
+			// client secret authentication: no signing key needed
+		} else if raw := required("VITALIA_OIDC_SIGNING_KEY"); raw != "" {
 			key, err := doctorlogin.ParseSigningKey(raw)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("VITALIA_OIDC_SIGNING_KEY: %v", err))
 			}
 			c.OIDCSigningKey = key
 		}
+	}
+
+	if c.StaffOIDCIssuer = strings.TrimSpace(getenv("VITALIA_STAFF_OIDC_ISSUER")); c.StaffOIDCIssuer != "" {
+		c.StaffOIDCClientID = get("VITALIA_STAFF_OIDC_CLIENT_ID", "vitalia")
+		c.StaffOIDCSecret = required("VITALIA_STAFF_OIDC_CLIENT_SECRET")
+		c.StaffGroup = get("VITALIA_STAFF_GROUP", "Vitalia RRHH")
+	}
+	switch {
+	case (c.UIUser == "") != (c.UIPassword == ""):
+		errs = append(errs, errors.New("VITALIA_UI_USER and VITALIA_UI_PASSWORD go together"))
+	case c.UIUser == "" && c.StaffOIDCIssuer == "":
+		errs = append(errs, errors.New("the management area needs VITALIA_UI_USER and VITALIA_UI_PASSWORD, or VITALIA_STAFF_OIDC_ISSUER"))
 	}
 
 	if secret := required("VITALIA_WEBHOOK_SECRET"); secret != "" {

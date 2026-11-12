@@ -34,9 +34,14 @@ type Stub struct {
 	HTTP          *http.Client
 	Now           func() time.Time
 
-	mu   sync.Mutex
-	recs map[string]*record
-	ord  []string
+	SCIMToken string // bearer token of the SCIM API; empty falls back to Token
+
+	mu     sync.Mutex
+	recs   map[string]*record
+	ord    []string
+	users  map[string]*scimUser
+	uord   []string
+	groups map[string]map[string]any
 }
 
 type record struct {
@@ -65,6 +70,7 @@ func (s *Stub) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/enrollments/{id}", s.auth(s.get))
 	mux.HandleFunc("POST /api/v1/enrollments/{id}/confirmation", s.auth(s.confirm))
 	mux.HandleFunc("POST /api/v1/enrollments/{id}/cancellation", s.auth(s.cancel))
+	s.scimRoutes(mux)
 	return mux
 }
 
@@ -106,27 +112,40 @@ func (s *Stub) create(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusBadRequest, "invalid_request", "Missing field or wrong format.", v)
 		return
 	}
-	if strings.HasPrefix(in.CollegiateNumber, "999") {
-		w.Header().Set("Retry-After", "30")
-		problem(w, http.StatusServiceUnavailable, "issuer_unavailable", "The issuer did not answer. Nothing was opened.", nil)
-		return
-	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	e, created, err := s.openLocked(admin, in.CollegiateNumber)
+	switch {
+	case errors.Is(err, errIssuerDown):
+		w.Header().Set("Retry-After", "30")
+		problem(w, http.StatusServiceUnavailable, "issuer_unavailable", "The issuer did not answer. Nothing was opened.", nil)
+	case !created:
+		writeJSON(w, http.StatusOK, e)
+	default:
+		writeJSON(w, http.StatusCreated, e)
+	}
+}
+
+var errIssuerDown = errors.New("issuer unavailable")
+
+// openLocked returns the open enrolment of the pair or opens a new one.
+// Inputs are already validated. The caller holds s.mu.
+func (s *Stub) openLocked(admin, coll string) (e adapter.Enrollment, created bool, err error) {
+	if strings.HasPrefix(coll, "999") {
+		return adapter.Enrollment{}, false, errIssuerDown
+	}
 	for _, id := range s.ord {
 		rec := s.recs[id]
-		if rec.admin == admin && rec.e.CollegiateNumber == in.CollegiateNumber && !rec.e.State.Final() {
-			writeJSON(w, http.StatusOK, rec.e)
-			return
+		if rec.admin == admin && rec.e.CollegiateNumber == coll && !rec.e.State.Final() {
+			return rec.e, false, nil
 		}
 	}
 	now := s.now()
 	exp := now.Add(7 * 24 * time.Hour)
-	e := adapter.Enrollment{ID: newUUID(), CollegiateNumber: in.CollegiateNumber, ExpiresAt: &exp, UpdatedAt: &now}
-	if strings.HasSuffix(in.CollegiateNumber, "0") {
+	e = adapter.Enrollment{ID: newUUID(), CollegiateNumber: coll, ExpiresAt: &exp, UpdatedAt: &now}
+	if strings.HasSuffix(coll, "0") {
 		e.State = adapter.PendingConfirmation
-		e.DoctorID = s.doctorID(in.CollegiateNumber, now)
+		e.DoctorID = s.doctorID(coll, now)
 	} else {
 		e.State = adapter.Initiated
 		e.IssuancePortalURL = &s.PortalURL
@@ -136,7 +155,17 @@ func (s *Stub) create(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recs[e.ID] = &record{e: e, admin: admin}
 	s.ord = append(s.ord, e.ID)
-	writeJSON(w, http.StatusCreated, e)
+	return e, true, nil
+}
+
+// cancelLocked cancels rec when its state allows it. The caller holds s.mu.
+func (s *Stub) cancelLocked(rec *record) bool {
+	if !rec.e.State.CanCancel() {
+		return false
+	}
+	s.move(rec, adapter.Cancelled)
+	rec.e.DoctorID, rec.e.IssuancePortalURL, rec.e.AuthSourcesCause = nil, nil, nil
+	return true
 }
 
 func (s *Stub) get(w http.ResponseWriter, r *http.Request) {
@@ -198,9 +227,7 @@ func (s *Stub) cancel(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case rec.e.State == adapter.Cancelled:
-	case rec.e.State.CanCancel():
-		s.move(rec, adapter.Cancelled)
-		rec.e.DoctorID, rec.e.IssuancePortalURL, rec.e.AuthSourcesCause = nil, nil, nil
+	case s.cancelLocked(rec):
 	default:
 		problem(w, http.StatusConflict, "enrollment_state_conflict",
 			fmt.Sprintf("Cannot cancel an enrollment in state %s.", rec.e.State), nil)

@@ -211,6 +211,44 @@ func TestWebhookForUnknownEnrollmentIsKeptAndReconciled(t *testing.T) {
 	}
 }
 
+func TestDirectoryEnrolmentIsAdoptedByRegistrationNumber(t *testing.T) {
+	e := newEnv(t, false)
+	e.svc.AdoptAfter = 0
+	ctx := context.Background()
+	known, err := e.st.FindOrCreatePractitioner(ctx, store.Practitioner{FullName: "Pau Vidal", AdministrativeNumber: "Y1234567X", CollegiateNumber: "282812345"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	send := func(id, coll string, state adapter.State) {
+		t.Helper()
+		ev := adapter.Event{EventID: id, Event: adapter.EventStateChanged, OccurredAt: now,
+			Enrollment: adapter.Enrollment{ID: id, State: state, CollegiateNumber: coll, UpdatedAt: &now}}
+		if s := e.stub.SendEvent(ctx, ev); s.Status != http.StatusOK {
+			t.Fatalf("webhook: %+v", s)
+		}
+	}
+
+	// A physician the clinic already has: the enrolment joins their record.
+	send("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "282812345", adapter.Initiated)
+	// One the clinic has never seen: a record is created from the enrolment.
+	send("ffffffff-ffff-4fff-8fff-ffffffffffff", "282810010", adapter.PendingConfirmation)
+	e.svc.ProcessPending(ctx)
+
+	if got := e.state(t, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"); got.PractitionerID != known.ID || got.State != adapter.Initiated {
+		t.Fatalf("known physician: %+v", got)
+	}
+	created := e.state(t, "ffffffff-ffff-4fff-8fff-ffffffffffff")
+	p, err := e.st.Practitioner(ctx, created.PractitionerID)
+	if err != nil || p.CollegiateNumber != "282810010" || p.FullName != "Colegiado nº 282810010" {
+		t.Fatalf("created physician: %+v %v", p, err)
+	}
+	hooks, _ := e.st.WebhooksOf(ctx, "ffffffff-ffff-4fff-8fff-ffffffffffff")
+	if len(hooks) != 1 || hooks[0].Status != store.WebhookApplied {
+		t.Fatalf("webhooks = %+v", hooks)
+	}
+}
+
 func TestRefreshOnWebhookReadsTheSourceOfTruth(t *testing.T) {
 	e := newEnv(t, true)
 	ctx := context.Background()

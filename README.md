@@ -51,7 +51,8 @@ A **fictitious clinic** used to test, end to end, how a real healthcare organisa
 ```
 cmd/vitalia          the clinic
 cmd/sendhook         sends a signed test webhook to a running instance
-cmd/fakeadapter      stand-ins of the enrolment API and the identity provider, plus /_sim
+cmd/fakeadapter      stand-ins of the enrolment API (REST and SCIM 2.0) and the identity provider, plus /_sim
+deploy/authentik     Authentik for the clinic: compose file and blueprint
 internal/adapter     enrolment API types and client (TokenSource: static token in phase 1)
 internal/webhook     signature, receiver, sender
 internal/enrollment  enrol / refresh / decide / cancel, webhook processor
@@ -74,6 +75,34 @@ In `/_sim` (http://localhost:8091/_sim) you act as the physician, the registry a
 - Then sign in at http://localhost:8080/profesional. The simulated IdP lets you pick which DoctorID to present, including an outsider to test the refusal.
 
 Scenarios depend on the registration number: one ending in `0` already has a DoctorID, and one starting with `999` gets `503 issuer_unavailable`.
+
+## The clinic with its own directory (Authentik)
+
+The clinic can also keep its staff and physicians in [Authentik](https://goauthentik.io) (2026.8), as a real organisation keeps them in Entra ID or Okta. Everything on the Authentik side is configuration, in [`deploy/authentik/blueprints/vitalia.yaml`](deploy/authentik/blueprints/vitalia.yaml):
+
+| What | How |
+| --- | --- |
+| Directory | Group `Vitalia RRHH` (account `rrhh`) and group `Vitalia Médicos` (five synthetic physicians). A physician's username is their registration number. Their attributes hold `collegiate_number` and `administrative_number`. |
+| Enrolment by SCIM 2.0 | A SCIM provider sends the `Vitalia Médicos` group to the enrolment service. A property mapping adds the extension `urn:eudistack:params:scim:schemas:extension:doctorid:1.0:User` (`collegiateNumber`, `administrativeNumber`). An organisation that keeps those values elsewhere changes the mapping, not code. |
+| DoctorID federation | The DoctorID identity provider (CGCOM Verifier) is an OIDC source with a **DoctorID** button on the login page. The sign-in is linked to the account whose username is the presented `personal_administrative_number`. There is no enrolment flow, so a DoctorID from outside the clinic is refused by Authentik. |
+| Vitalia | OIDC client with a client secret. HR signs in to `/gestion` with their account, and the token must list `Vitalia RRHH`. Physicians sign in to `/profesional` through Authentik and DoctorID. A `doctorid` scope puts the registration number in `personal_administrative_number`, so the clinic's access rule is unchanged. |
+
+The SCIM front of the enrolment service is a **proposal**, simulated in `fakeadapter` (`/scim/v2`):
+
+- creating a user enrols the physician;
+- `active=false` or `DELETE` cancels the open enrolment;
+- reactivating, or changing the identifiers, opens a new enrolment;
+- each enrolment opened or cancelled this way is notified with the usual signed webhook.
+
+The clinic did not open those enrolments, so it adopts them by registration number. If an event's enrolment is still unknown after 15 seconds, the clinic attaches it to the physician with that number, or creates the physician if there is none.
+
+```sh
+make authentik-env     # once: deploy/authentik/.env with random secrets (admin and HR passwords in it)
+make demo-authentik    # terminal 1: simulators + Vitalia wired to Authentik
+make authentik-up      # terminal 2: Authentik on http://localhost:9000
+```
+
+Start `demo-authentik` first: Authentik reads the DoctorID JWKS from the simulator when it applies the blueprint. The physicians are provisioned on the first SCIM sync, and the simulator's `/_sim` lists them. Locally, Authentik reaches the simulators through `host.docker.internal`, while the browser uses `localhost`.
 
 ## Configuration
 

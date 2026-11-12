@@ -1,7 +1,8 @@
 // Command fakeadapter runs the stand-ins of the DoctorID systems for local
 // demos and the phase 1 deployment:
 //
-//   - the enrolment API (internal listener, server to server);
+//   - the enrolment API (internal listener, server to server), with its
+//     SCIM 2.0 front (/scim/v2) for the clinic's directory;
 //   - the identity provider the physicians sign in with (public listener);
 //   - /_sim, a page to play the physician, the CGCOM registry and the clock:
 //     each button moves an enrolment and sends the signed webhook.
@@ -22,6 +23,7 @@ import (
 
 	"github.com/fikua/fikua-vitalia/internal/adapter"
 	"github.com/fikua/fikua-vitalia/internal/adapterstub"
+	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/idpstub"
 )
 
@@ -34,6 +36,7 @@ func main() {
 	}
 	stub := &adapterstub.Stub{
 		Token:         os.Getenv("FAKE_TOKEN"),
+		SCIMToken:     os.Getenv("FAKE_SCIM_TOKEN"),
 		PortalURL:     env("FAKE_PORTAL_URL", "https://issuance-portal.example.test/"),
 		WebhookURL:    env("FAKE_WEBHOOK_URL", "http://localhost:8080/webhooks/enrollments"),
 		WebhookSecret: []byte(secret),
@@ -45,12 +48,13 @@ func main() {
 	// Internal listener: the enrolment API only.
 	api := http.NewServeMux()
 	api.Handle("/api/", stub.Handler())
+	api.Handle("/scim/", stub.Handler())
 
 	// Public listener: identity provider and simulator page.
 	public := http.NewServeMux()
 	public.Handle("GET /_sim", guard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = simPage.Execute(w, map[string]any{"Rows": stub.Snapshot(), "Actions": adapterstub.Actions, "Msg": r.URL.Query().Get("msg")})
+		_ = simPage.Execute(w, map[string]any{"Rows": stub.Snapshot(), "Users": stub.SCIMUsers(), "Actions": adapterstub.Actions, "Msg": r.URL.Query().Get("msg")})
 	})))
 	public.Handle("POST /_sim/{id}/{action}", guard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sent, err := stub.ActWith(r.Context(), r.PathValue("id"), r.PathValue("action"),
@@ -79,12 +83,32 @@ func main() {
 			Holders: stub.Holders,
 			HTTP:    &http.Client{Timeout: 10 * time.Second},
 		}
+		// A federating identity provider (the clinic's Authentik), with a
+		// client secret.
+		if id := os.Getenv("FAKE_IDP_FED_CLIENT_ID"); id != "" {
+			idp.Extra = append(idp.Extra, idpstub.Client{ID: id, Secret: os.Getenv("FAKE_IDP_FED_CLIENT_SECRET"),
+				RedirectURI: os.Getenv("FAKE_IDP_FED_REDIRECT_URI")})
+			if idp.Extra[0].Secret == "" || idp.Extra[0].RedirectURI == "" {
+				logger.Error("FAKE_IDP_FED_CLIENT_SECRET and FAKE_IDP_FED_REDIRECT_URI are required with FAKE_IDP_FED_CLIENT_ID")
+				os.Exit(2)
+			}
+		}
+		// A stable signing key, so a federating IdP keeps trusting the JWKS
+		// it fetched across restarts.
+		if raw := os.Getenv("FAKE_IDP_SIGNING_KEY"); raw != "" {
+			key, err := doctorlogin.ParseSigningKey(raw)
+			if err != nil {
+				logger.Error("FAKE_IDP_SIGNING_KEY", "err", err)
+				os.Exit(2)
+			}
+			idp.Key = key
+		}
 		h := idp.Handler()
 		public.Handle("GET /.well-known/openid-configuration", h)
 		public.Handle("GET /jwks", h)
 		public.Handle("POST /token", h)       // server to server, client authenticated by its assertion
 		public.Handle("/authorize", guard(h)) // the "wallet": only for people with the simulator password
-		logger.Info("identity provider enabled", "issuer", issuer, "client_id", idp.Client.ID)
+		logger.Info("identity provider enabled", "issuer", issuer, "client_id", idp.Client.ID, "federated_clients", len(idp.Extra))
 	}
 
 	apiAddr, publicAddr := env("FAKE_LISTEN_ADDR", ":8090"), env("FAKE_PUBLIC_ADDR", ":8091")
@@ -160,4 +184,10 @@ code{font-size:12px}form{display:inline}button{margin:2px;padding:4px 8px;cursor
 {{else}}<tr><td colspan="4">Sin inscripciones. Da de alta un profesional en la clínica.</td></tr>{{end}}
 </table>
 <p><small>Escenarios por nº de colegiado: acaba en 0 → ya tiene DoctorID; empieza por 999 → emisor caído (503).</small></p>
+<h2>Usuarios aprovisionados por SCIM</h2>
+<p>Los envía el directorio de la clínica (Authentik) a <code>/scim/v2</code>. Cada alta abre una inscripción y avisa a la clínica con un webhook.</p>
+<table><tr><th>Usuario</th><th>Nombre</th><th>Colegiado</th><th>Activo</th><th>Inscripción</th></tr>
+{{range $u := .Users}}<tr><td>{{$u.UserName}}</td><td>{{$u.DisplayName}}</td><td>{{$u.CollegiateNumber}}</td><td>{{if $u.Active}}sí{{else}}no{{end}}</td><td><code>{{$u.EnrollmentID}}</code> {{$u.State}}</td></tr>
+{{else}}<tr><td colspan="5">Ninguno todavía.</td></tr>{{end}}
+</table>
 </body></html>`))

@@ -23,11 +23,22 @@ type Service struct {
 	logger           *slog.Logger
 	refreshOnWebhook bool
 	wake             chan struct{}
+
+	// AdoptAfter is how long an event for an enrolment the clinic did not
+	// open waits before the clinic adopts it by registration number. Those
+	// enrolments come from the clinic's directory (SCIM). The wait lets a
+	// webhook that overtook our own POST response find that response first.
+	AdoptAfter time.Duration
+	Now        func() time.Time
 }
+
+// DefaultAdoptAfter is the default AdoptAfter.
+const DefaultAdoptAfter = 15 * time.Second
 
 // New builds the service.
 func New(st *store.Store, client *adapter.Client, logger *slog.Logger, refreshOnWebhook bool) *Service {
-	return &Service{store: st, client: client, logger: logger, refreshOnWebhook: refreshOnWebhook, wake: make(chan struct{}, 1)}
+	return &Service{store: st, client: client, logger: logger, refreshOnWebhook: refreshOnWebhook, wake: make(chan struct{}, 1),
+		AdoptAfter: DefaultAdoptAfter, Now: time.Now}
 }
 
 // ValidationError is a form error shown to the operator.
@@ -182,9 +193,20 @@ func (s *Service) apply(ctx context.Context, rec store.WebhookEvent) (status, de
 	}
 
 	stored, err := s.store.Enrollment(ctx, ev.Enrollment.ID)
+	adopted := ""
 	if errors.Is(err, store.ErrNotFound) {
-		return store.WebhookUnknownEnrollment, "no enrollment with this id (yet)", false
-	} else if err != nil {
+		if s.Now().Sub(rec.ReceivedAt) < s.AdoptAfter {
+			return store.WebhookUnknownEnrollment, "no enrollment with this id (yet)", false
+		}
+		if adopted, err = s.adopt(ctx, ev.Enrollment); err != nil {
+			return store.WebhookError, err.Error(), false
+		}
+		if adopted == "" {
+			return store.WebhookUnknownEnrollment, "no enrollment with this id, and more than one physician with its registration number", false
+		}
+		stored, err = s.store.Enrollment(ctx, ev.Enrollment.ID)
+	}
+	if err != nil {
 		return store.WebhookError, err.Error(), false
 	}
 
@@ -217,5 +239,58 @@ func (s *Service) apply(ctx context.Context, rec store.WebhookEvent) (status, de
 	if outcome == store.Stale {
 		return store.WebhookStale, "older than the stored state; not applied", true
 	}
-	return store.WebhookApplied, "state " + string(ev.Enrollment.State), true
+	return store.WebhookApplied, adopted + "state " + string(ev.Enrollment.State), true
+}
+
+// adopt stores an enrolment the clinic did not open (its directory
+// provisioned the physician by SCIM) under the physician with its
+// registration number, creating the physician when there is none. It
+// returns a note for the event detail, or "" when the number is ambiguous.
+func (s *Service) adopt(ctx context.Context, e adapter.Enrollment) (string, error) {
+	rows, err := s.store.ListPractitioners(ctx)
+	if err != nil {
+		return "", err
+	}
+	var matches []store.Practitioner
+	for _, r := range rows {
+		if r.CollegiateNumber == e.CollegiateNumber {
+			matches = append(matches, r.Practitioner)
+		}
+	}
+	note := "adopted by registration number; "
+	var p store.Practitioner
+	switch len(matches) {
+	case 0:
+		if !adapter.ValidCollegiateNumber(e.CollegiateNumber) {
+			return "", fmt.Errorf("enrolment without a valid registration number")
+		}
+		// The directory, not the clinic, holds the name and the DNI: use
+		// what the DoctorID says, when there is one.
+		name, specialty := "Colegiado nº "+e.CollegiateNumber, ""
+		if e.DoctorID != nil {
+			given, _ := e.DoctorID.Data["givenName"].(string)
+			family, _ := e.DoctorID.Data["familyName"].(string)
+			if n := strings.TrimSpace(given + " " + family); n != "" {
+				name = n
+			}
+			if sp, ok := e.DoctorID.Data["medical_speciality"].([]any); ok && len(sp) > 0 {
+				specialty, _ = sp[0].(string)
+			}
+		}
+		if p, err = s.store.FindOrCreatePractitioner(ctx, store.Practitioner{
+			FullName: name, CollegiateNumber: e.CollegiateNumber, Specialty: specialty}); err != nil {
+			return "", err
+		}
+		note = "physician created from the directory's enrolment; "
+	case 1:
+		p = matches[0]
+	default:
+		return "", nil
+	}
+	raw, _ := json.Marshal(e)
+	if _, err := s.store.UpsertEnrollment(ctx, p.ID, e, raw, false); err != nil {
+		return "", fmt.Errorf("store adopted enrollment: %w", err)
+	}
+	s.logger.Info("enrolment adopted", "enrollment_id", e.ID, "practitioner_id", p.ID)
+	return note, nil
 }

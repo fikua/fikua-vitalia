@@ -1,0 +1,67 @@
+# Authentik for Clínica Vitalia: the clinic's directory and identity
+# provider. It holds the staff and physician accounts, provisions the
+# physicians to the enrolment service over SCIM 2.0 and federates the CGCOM
+# DoctorID identity provider (Verifier) for the physicians' sign-in.
+#
+# Local use: `make authentik-up` (see the Makefile and README). Copy
+# .env.example to .env first and fill in the secrets.
+#
+# Based on the official compose file of the same release, without the Docker
+# socket and certificate mounts: the clinic needs no outposts.
+name: vitalia-authentik
+
+x-authentik: &authentik
+  image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.8.5}
+  restart: unless-stopped
+  shm_size: 512mb
+  env_file:
+    - .env
+  environment:
+    AUTHENTIK_POSTGRESQL__HOST: postgresql
+    AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+    AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+    AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?PG_PASS is required}
+    AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?AUTHENTIK_SECRET_KEY is required}
+    AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+    AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+  volumes:
+    - ./blueprints:/blueprints/vitalia:ro
+    - data:/data
+  # The local simulators run on the host (make demo).
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  depends_on:
+    postgresql:
+      condition: service_healthy
+
+services:
+  postgresql:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PG_DB:-authentik}
+      POSTGRES_USER: ${PG_USER:-authentik}
+      POSTGRES_PASSWORD: ${PG_PASS:?PG_PASS is required}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      retries: 10
+      start_period: 20s
+      timeout: 5s
+    volumes:
+      - database:/var/lib/postgresql/data
+
+  server:
+    <<: *authentik
+    command: server
+    ports:
+      - ${COMPOSE_PORT_HTTP:-9000}:9000
+
+  worker:
+    <<: *authentik
+    command: worker
+
+volumes:
+  database:
+  data:
