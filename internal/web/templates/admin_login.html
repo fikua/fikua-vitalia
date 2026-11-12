@@ -1,0 +1,26 @@
+{{define "content"}}
+<section class="login">
+  <div class="wrap login-grid">
+    <div class="login-intro">
+      <p class="eyebrow">Gestión de profesionales · Recursos Humanos</p>
+      <h1>Habilita el acceso de tus médicos con DoctorID</h1>
+      <ul class="feature-list">
+        <li><span class="feature-icon"><svg class="i"><use href="#i-user-plus"/></svg></span><span><strong>Alta del médico</strong>Con su documento y su número de colegiado.</span></li>
+        <li><span class="feature-icon"><svg class="i"><use href="#i-clipboard"/></svg></span><span><strong>Revisión de sus datos</strong>Los del colegio, junto a vuestra ficha, antes de confirmar.</span></li>
+        <li><span class="feature-icon"><svg class="i"><use href="#i-shield"/></svg></span><span><strong>Acceso sin contraseñas</strong>Desde entonces entra en el Área profesional con su DoctorID.</span></li>
+      </ul>
+    </div>
+    <div class="card login-card">
+      <h2>Acceso de gestión</h2>
+      <p class="muted">Solo para el personal de Recursos Humanos y Dirección médica.</p>
+      {{if .Error}}<p class="field-error" role="alert"><svg class="i"><use href="#i-alert"/></svg>{{.Error}}</p>{{end}}
+      <form method="post" action="/gestion/acceso" class="form">
+        <label>Usuario <input name="user" autocomplete="username" required autofocus></label>
+        <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit" class="primary block">Entrar<svg class="i"><use href="#i-arrow"/></svg></button>
+      </form>
+      <p class="small muted login-alt">¿Eres médico de la clínica? <a href="/profesional">Entra con tu DoctorID</a>.</p>
+    </div>
+  </div>
+</section>
+{{end}}

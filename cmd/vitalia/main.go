@@ -15,6 +15,7 @@ import (
 
 	"github.com/fikua/fikua-vitalia/internal/adapter"
 	"github.com/fikua/fikua-vitalia/internal/config"
+	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/store"
 	"github.com/fikua/fikua-vitalia/internal/web"
@@ -48,8 +49,18 @@ func run(logger *slog.Logger) error {
 	svc := enrollment.New(st, client, logger, cfg.RefreshOnWebhook)
 	receiver := &webhook.Receiver{Secret: cfg.WebhookSecret, Tolerance: cfg.SignatureTolerance, Sink: st,
 		Notify: svc.Wake, Logger: logger}
+	var login *doctorlogin.Client
+	if cfg.OIDCIssuer != "" {
+		login, err = doctorlogin.New(doctorlogin.Config{
+			Issuer: cfg.OIDCIssuer, ClientID: cfg.OIDCClientID, RedirectURL: cfg.PublicURL.JoinPath("/profesional/callback").String(),
+			Scopes: cfg.OIDCScopes, ACR: cfg.OIDCACR, SigningKey: cfg.OIDCSigningKey, HTTP: &http.Client{Timeout: 15 * time.Second},
+		})
+		if err != nil {
+			return err
+		}
+	}
 	ui, err := web.New(web.Config{UIUser: cfg.UIUser, UIPassword: cfg.UIPassword, CookieSecure: cfg.CookieSecure,
-		AdapterHost: cfg.AdapterBaseURL.String()}, st, svc, receiver, logger)
+		AdapterHost: cfg.AdapterBaseURL.String()}, st, svc, receiver, login, logger)
 	if err != nil {
 		return err
 	}
@@ -65,7 +76,7 @@ func run(logger *slog.Logger) error {
 
 	errc := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "addr", cfg.ListenAddr, "adapter", cfg.AdapterBaseURL.String(),
+		logger.Info("listening", "addr", cfg.ListenAddr, "adapter", cfg.AdapterBaseURL.String(), "oidc_issuer", cfg.OIDCIssuer,
 			"token_configured", cfg.AdapterToken != "", "webhook_path", web.WebhookPath)
 		errc <- srv.ListenAndServe()
 	}()

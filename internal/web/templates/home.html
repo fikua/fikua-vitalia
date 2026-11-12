@@ -1,0 +1,55 @@
+{{define "content"}}
+<section class="hero hero-home">
+  <div class="wrap home-hero">
+    <div>
+      <p class="eyebrow">Clínica Vitalia · Barcelona</p>
+      <h1>Medicina cercana, con los mejores profesionales</h1>
+      <p class="hero-lead">Consultas de especialidades, pruebas diagnósticas y seguimiento personalizado en un único centro.</p>
+      <div class="hero-actions">
+        <a class="button light" href="#especialidades">Ver especialidades</a>
+        <a class="button outline-light" href="/profesional"><svg class="i"><use href="#i-steth"/></svg>Soy profesional de Vitalia</a>
+      </div>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <svg viewBox="0 0 320 260" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="200" cy="120" r="110" fill="rgb(255 255 255 / .08)"/>
+        <rect x="70" y="40" width="190" height="190" rx="36" fill="rgb(255 255 255 / .12)"/>
+        <path d="M140 80h50v45h45v50h-45v45h-50v-45H95v-50h45z" fill="#fff" opacity=".95"/>
+        <path d="M165 182c-16-10-25-19-25-29a13 13 0 0 1 25-5 13 13 0 0 1 25 5c0 10-9 19-25 29z" fill="#0ea5a0"/>
+        <circle cx="60" cy="200" r="18" fill="#8fe3dd" opacity=".6"/><circle cx="275" cy="48" r="10" fill="#8fe3dd" opacity=".7"/>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <section class="section" id="especialidades">
+    <div class="section-head"><h2>Especialidades</h2><span class="muted small">Un equipo de médicos colegiados en todas las áreas</span></div>
+    <div class="spec-grid">
+      <div class="spec"><span class="quick-icon"><svg class="i"><use href="#i-heart"/></svg></span><strong>Cardiología</strong><small>Prevención, diagnóstico y seguimiento del corazón.</small></div>
+      <div class="spec"><span class="quick-icon"><svg class="i"><use href="#i-users"/></svg></span><strong>Pediatría</strong><small>El cuidado de los más pequeños, de 0 a 14 años.</small></div>
+      <div class="spec"><span class="quick-icon"><svg class="i"><use href="#i-steth"/></svg></span><strong>Medicina familiar</strong><small>Tu médico de referencia para el día a día.</small></div>
+      <div class="spec"><span class="quick-icon"><svg class="i"><use href="#i-activity"/></svg></span><strong>Traumatología</strong><small>Lesiones, articulaciones y rehabilitación.</small></div>
+      <div class="spec"><span class="quick-icon"><svg class="i"><use href="#i-shield"/></svg></span><strong>Dermatología</strong><small>Salud de la piel, revisiones y tratamientos.</small></div>
+      <div class="spec"><span class="quick-icon"><svg class="i"><use href="#i-clipboard"/></svg></span><strong>Análisis clínicos</strong><small>Extracciones y resultados en el mismo centro.</small></div>
+    </div>
+  </section>
+
+  <section class="section banner" id="profesionales">
+    <div class="banner-text">
+      <p class="eyebrow">¿Trabajas en Vitalia?</p>
+      <h2>Entra con tu DoctorID, sin usuario ni contraseña</h2>
+      <p>Los médicos de la clínica acceden a su agenda y a sus herramientas presentando su DoctorID, la identidad profesional verificada que emite su colegio. Recursos Humanos habilita el acceso cuando te incorporas.</p>
+      <div class="hero-actions">
+        <a class="button primary" href="/profesional"><svg class="i"><use href="#i-shield"/></svg>Ir al Área profesional</a>
+        <a class="button ghost" href="/gestion/profesionales">Gestión de profesionales (RR. HH.)</a>
+      </div>
+    </div>
+    <ol class="banner-steps">
+      <li><strong>RR. HH. te da de alta</strong><span>Con tu documento y tu número de colegiado.</span></li>
+      <li><strong>Obtienes tu DoctorID</strong><span>En el Portal de Emisión, si aún no lo tienes, y lo guardas en tu cartera.</span></li>
+      <li><strong>Entras con él</strong><span>Desde el Área profesional, cuando quieras.</span></li>
+    </ol>
+  </section>
+</div>
+{{end}}

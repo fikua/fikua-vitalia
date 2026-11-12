@@ -24,7 +24,7 @@ func stateLabel(s adapter.State) string {
 	case adapter.PendingConfirmation:
 		return "Pendiente de nuestra revisión"
 	case adapter.Completed:
-		return "Verificado"
+		return "Acceso habilitado"
 	case adapter.RejectedByRegistry:
 		return "Rechazado por el registro colegial"
 	case adapter.Expired:
@@ -190,7 +190,7 @@ var filterLabels = map[string]string{
 	groupReview:   "Por revisar",
 	groupWaiting:  "Esperando al médico",
 	groupIssues:   "Incidencias",
-	groupVerified: "Verificados",
+	groupVerified: "Habilitados",
 	groupClosed:   "Cerrados",
 }
 
@@ -239,10 +239,10 @@ type step struct {
 // steps maps the enrolment state onto the clinic's four-step journey.
 func steps(s adapter.State) []step {
 	st := []step{
-		{Label: "Alta en Vitalia", Hint: "Ficha e inscripción enviadas", Status: "done"},
+		{Label: "Alta en Vitalia", Hint: "Ficha y enrolamiento enviados", Status: "done"},
 		{Label: "DoctorID del médico", Hint: "Lo obtiene en el Portal de Emisión", Status: "todo"},
-		{Label: "Revisión de datos", Hint: "Admisión compara y confirma", Status: "todo"},
-		{Label: "Verificado", Hint: "Puede identificarse con DoctorID", Status: "todo"},
+		{Label: "Revisión de datos", Hint: "RR. HH. compara y confirma", Status: "todo"},
+		{Label: "Acceso habilitado", Hint: "Entra en el Área profesional con DoctorID", Status: "todo"},
 	}
 	switch s {
 	case adapter.Initiated:
@@ -334,7 +334,7 @@ func operationLabel(op string) string {
 
 func filterHref(f string) string {
 	if f == "" {
-		return "/profesionales"
+		return "/gestion/profesionales"
 	}
-	return "/profesionales?estado=" + f
+	return "/gestion/profesionales?estado=" + f
 }

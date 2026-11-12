@@ -3,9 +3,31 @@
   <div class="wrap">
     <p class="eyebrow">Integración DoctorID</p>
     <h1>Registro técnico</h1>
-    <p class="hero-lead">Lo que la clínica ha enviado al sistema DoctorID y los avisos que ha recibido. Es la evidencia de la integración.</p>
+    <p class="hero-lead">Inicios de sesión con DoctorID, llamadas de enrolamiento y avisos recibidos. Es la evidencia de la integración.</p>
   </div>
 </section>
+
+<div class="wrap">
+  <section class="card section">
+    <div class="section-head"><h2><svg class="i"><use href="#i-shield"/></svg> Inicios de sesión con DoctorID</h2></div>
+    <p class="small muted">{{if .Issuer}}Proveedor de identidad <span class="mono">{{.Issuer}}</span> · cliente OIDC con private_key_jwt · clave pública en <a href="/.well-known/jwks.json" class="mono">/.well-known/jwks.json</a>{{else}}El inicio de sesión con DoctorID no está configurado.{{end}}</p>
+    {{if .Logins}}
+    <ol class="timeline compact">
+    {{range .Logins}}
+      <li>
+        <span class="tl-icon tone-{{if eq .Outcome "granted"}}ok{{else}}bad{{end}}"><svg class="i"><use href="#i-shield"/></svg></span>
+        <details>
+          <summary><strong>{{if eq .Outcome "granted"}}Acceso permitido{{else}}Acceso denegado{{end}}</strong><span class="small muted">{{time .At}}</span>
+            <span class="small mono tl-meta">{{if .CollegiateNumber}}colegiado {{.CollegiateNumber}} · {{end}}{{if .Reason}}{{.Reason}}{{else}}ok{{end}}{{if .ACR}} · {{.ACR}}{{end}}{{if .AMR}} · amr {{.AMR}}{{end}}</span></summary>
+          {{if .Detail}}<p class="small">{{.Detail}}</p>{{end}}
+          {{if .Claims}}<p class="small muted">Claims del ID Token</p><pre>{{.Claims}}</pre>{{end}}
+        </details>
+      </li>
+    {{end}}
+    </ol>
+    {{else}}<p class="muted">Ninguno todavía.</p>{{end}}
+  </section>
+</div>
 
 <div class="wrap two-col even">
   <section class="card">

@@ -1,0 +1,24 @@
+{{define "content"}}
+<section class="hero hero-compact">
+  <div class="wrap">
+    <p class="eyebrow">Área profesional</p>
+    <h1>{{.Title}}</h1>
+  </div>
+</section>
+<div class="wrap">
+  <section class="card state-card tone-warn denied">
+    <span class="empty-icon warn"><svg class="i"><use href="#i-alert"/></svg></span>
+    <div>
+      <p class="lead">{{if .Detail}}{{.Detail}}{{else}}{{reasonLabel .Reason .State}}{{end}}</p>
+      {{with .Identity}}{{if .CollegiateNumber}}
+      <p class="small muted">DoctorID presentado: {{titleCase .GivenName}} {{titleCase .FamilyName}} · colegiado <span class="mono">{{.CollegiateNumber}}</span></p>
+      {{end}}{{end}}
+      <p class="small muted">Código: <span class="mono">{{.Reason}}</span></p>
+      <div class="actions">
+        <a class="button primary" href="/profesional">Volver al Área profesional</a>
+        <a class="button ghost" href="/">Ir al inicio</a>
+      </div>
+    </div>
+  </section>
+</div>
+{{end}}

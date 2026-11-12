@@ -1,16 +1,16 @@
 {{define "content"}}
 <section class="hero hero-compact">
   <div class="wrap">
-    <p class="crumbs"><a href="/profesionales">Profesionales</a> <svg class="i"><use href="#i-chevron"/></svg> Alta</p>
+    <p class="crumbs"><a href="/gestion/profesionales">Profesionales</a> <svg class="i"><use href="#i-chevron"/></svg> Alta</p>
     <h1>Alta de profesional</h1>
-    <p class="hero-lead">Registramos al médico en la clínica y pedimos su verificación con DoctorID.</p>
+    <p class="hero-lead">Da de alta a un médico de la clínica y habilita su acceso con DoctorID.</p>
   </div>
 </section>
 
 <div class="wrap two-col">
   <section class="card">
     <h2>Datos del profesional</h2>
-    <form method="post" action="/profesionales" class="form" novalidate>
+    <form method="post" action="/gestion/profesionales" class="form" novalidate>
       <label>Nombre y apellidos
         <input name="full_name" value="{{.Form.full_name}}" required autocomplete="off" {{with .Errors}}{{with .full_name}}aria-invalid="true"{{end}}{{end}}>
         {{with .Errors}}{{with .full_name}}<span class="field-error">{{.}}</span>{{end}}{{end}}
@@ -34,8 +34,8 @@
         </label>
       </div>
       <div class="form-actions">
-        <button type="submit" class="primary"><svg class="i"><use href="#i-shield"/></svg>Dar de alta y verificar</button>
-        <a class="button ghost" href="/profesionales">Cancelar</a>
+        <button type="submit" class="primary"><svg class="i"><use href="#i-shield"/></svg>Dar de alta y habilitar DoctorID</button>
+        <a class="button ghost" href="/gestion/profesionales">Cancelar</a>
       </div>
     </form>
   </section>
@@ -46,6 +46,7 @@
       <li><strong>Pedimos su verificación</strong><span>Enviamos el documento y el número de colegiado al sistema DoctorID.</span></li>
       <li><strong>Si aún no tiene DoctorID</strong><span>Te daremos la dirección del Portal de Emisión para que se la envíes. Lo obtendrá con su certificado.</span></li>
       <li><strong>Revisas sus datos</strong><span>Cuando lo tenga, verás los datos del colegio junto a tu ficha para confirmarlos.</span></li>
+      <li><strong>Entra con su DoctorID</strong><span>Confirmados los datos, ya puede acceder al Área profesional de Vitalia con su DoctorID, sin usuario ni contraseña.</span></li>
     </ol>
     <p class="small muted">Entorno de pruebas: usa solo datos inventados.</p>
   </aside>

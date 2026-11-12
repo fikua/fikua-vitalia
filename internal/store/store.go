@@ -44,7 +44,34 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	if err := migrate(ctx, db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db, now: time.Now}, nil
+}
+
+// migrations add columns to tables created by earlier versions. Each one is
+// applied when its column is missing.
+var migrations = []struct{ table, column, ddl string }{
+	{"practitioners", "doctorid_iss", "ALTER TABLE practitioners ADD COLUMN doctorid_iss TEXT NOT NULL DEFAULT ''"},
+	{"practitioners", "doctorid_sub", "ALTER TABLE practitioners ADD COLUMN doctorid_sub TEXT NOT NULL DEFAULT ''"},
+}
+
+func migrate(ctx context.Context, db *sql.DB) error {
+	for _, m := range migrations {
+		var n int
+		err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, m.table, m.column).Scan(&n)
+		if err != nil {
+			return fmt.Errorf("inspect %s: %w", m.table, err)
+		}
+		if n == 0 {
+			if _, err := db.ExecContext(ctx, m.ddl); err != nil {
+				return fmt.Errorf("migrate %s.%s: %w", m.table, m.column, err)
+			}
+		}
+	}
+	return nil
 }
 
 // Close closes the database.
@@ -71,6 +98,8 @@ type Practitioner struct {
 	Specialty            string
 	Email                string
 	CreatedAt            time.Time
+	DoctorIDIssuer       string // bound on the first DoctorID login
+	DoctorIDSubject      string
 }
 
 // FindOrCreatePractitioner returns the practitioner with that pair, creating
@@ -104,12 +133,14 @@ func (s *Store) Practitioner(ctx context.Context, id int64) (Practitioner, error
 	return s.scanPractitioner(s.db.QueryRowContext(ctx, practitionerSelect+` WHERE id = ?`, id))
 }
 
-const practitionerSelect = `SELECT id, full_name, administrative_number, collegiate_number, specialty, email, created_at FROM practitioners`
+const practitionerSelect = `SELECT id, full_name, administrative_number, collegiate_number, specialty, email, created_at,
+	doctorid_iss, doctorid_sub FROM practitioners`
 
 func (s *Store) scanPractitioner(row *sql.Row) (Practitioner, error) {
 	var p Practitioner
 	var created string
-	err := row.Scan(&p.ID, &p.FullName, &p.AdministrativeNumber, &p.CollegiateNumber, &p.Specialty, &p.Email, &created)
+	err := row.Scan(&p.ID, &p.FullName, &p.AdministrativeNumber, &p.CollegiateNumber, &p.Specialty, &p.Email, &created,
+		&p.DoctorIDIssuer, &p.DoctorIDSubject)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Practitioner{}, ErrNotFound
 	}
@@ -131,7 +162,7 @@ type PractitionerRow struct {
 func (s *Store) ListPractitioners(ctx context.Context) ([]PractitionerRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT p.id, p.full_name, p.administrative_number, p.collegiate_number, p.specialty, p.email, p.created_at,
-		       e.id, e.state, e.body, e.adapter_updated_at, e.invalidated_reason, e.invalidated_procedure_id,
+		       p.doctorid_iss, p.doctorid_sub, e.id, e.state, e.body, e.adapter_updated_at, e.invalidated_reason, e.invalidated_procedure_id,
 		       e.invalidated_at, e.created_at, e.synced_at
 		FROM practitioners p
 		LEFT JOIN enrollments e ON e.id = (
@@ -147,7 +178,7 @@ func (s *Store) ListPractitioners(ctx context.Context) ([]PractitionerRow, error
 		var created string
 		var eid, state, body, upd, invR, invP, invAt, eCreated, synced sql.NullString
 		if err := rows.Scan(&r.ID, &r.FullName, &r.AdministrativeNumber, &r.CollegiateNumber, &r.Specialty, &r.Email, &created,
-			&eid, &state, &body, &upd, &invR, &invP, &invAt, &eCreated, &synced); err != nil {
+			&r.DoctorIDIssuer, &r.DoctorIDSubject, &eid, &state, &body, &upd, &invR, &invP, &invAt, &eCreated, &synced); err != nil {
 			return nil, fmt.Errorf("scan practitioner: %w", err)
 		}
 		r.CreatedAt = parseTS(created)
@@ -435,6 +466,82 @@ func (s *Store) queryCalls(ctx context.Context, where string, args ...any) ([]ad
 		}
 		c.At, c.Duration = parseTS(at), time.Duration(ms)*time.Millisecond
 		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// BindDoctorID records the DoctorID identity of a practitioner on their first
+// login. It never overwrites an existing binding.
+func (s *Store) BindDoctorID(ctx context.Context, practitionerID int64, iss, sub string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE practitioners SET doctorid_iss = ?, doctorid_sub = ? WHERE id = ? AND doctorid_sub = ''`, iss, sub, practitionerID)
+	return err
+}
+
+// ResetDoctorIDBinding forgets the bound DoctorID identity, so the next
+// login binds again (for example, after the physician's DoctorID changed).
+func (s *Store) ResetDoctorIDBinding(ctx context.Context, practitionerID int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE practitioners SET doctorid_iss = '', doctorid_sub = '' WHERE id = ?`, practitionerID)
+	return err
+}
+
+// ---------------------------------------------------------------- login events
+
+// Login outcomes.
+const (
+	LoginGranted = "granted"
+	LoginDenied  = "denied"
+)
+
+// LoginEvent is one attempt to enter with DoctorID.
+type LoginEvent struct {
+	At               time.Time
+	Outcome          string
+	Reason           string
+	PractitionerID   int64
+	CollegiateNumber string
+	Subject          string
+	ACR              string
+	AMR              string
+	Claims           string
+	Detail           string
+}
+
+// RecordLogin stores a login attempt.
+func (s *Store) RecordLogin(ctx context.Context, e LoginEvent) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO login_events (at, outcome, reason, practitioner_id, collegiate_number,
+		subject, acr, amr, claims, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ts(e.At), e.Outcome, e.Reason, e.PractitionerID, e.CollegiateNumber, e.Subject, e.ACR, e.AMR, e.Claims, e.Detail)
+	return err
+}
+
+// LoginsOf returns a practitioner's login attempts, newest first.
+func (s *Store) LoginsOf(ctx context.Context, practitionerID int64) ([]LoginEvent, error) {
+	return s.queryLogins(ctx, ` WHERE practitioner_id = ? ORDER BY id DESC LIMIT 50`, practitionerID)
+}
+
+// RecentLogins returns the latest login attempts.
+func (s *Store) RecentLogins(ctx context.Context, limit int) ([]LoginEvent, error) {
+	return s.queryLogins(ctx, ` ORDER BY id DESC LIMIT ?`, limit)
+}
+
+func (s *Store) queryLogins(ctx context.Context, where string, args ...any) ([]LoginEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT at, outcome, reason, practitioner_id, collegiate_number, subject, acr, amr,
+		claims, detail FROM login_events`+where, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query logins: %w", err)
+	}
+	defer rows.Close()
+	var out []LoginEvent
+	for rows.Next() {
+		var e LoginEvent
+		var at string
+		if err := rows.Scan(&at, &e.Outcome, &e.Reason, &e.PractitionerID, &e.CollegiateNumber, &e.Subject, &e.ACR,
+			&e.AMR, &e.Claims, &e.Detail); err != nil {
+			return nil, fmt.Errorf("scan login: %w", err)
+		}
+		e.At = parseTS(at)
+		out = append(out, e)
 	}
 	return out, rows.Err()
 }

@@ -60,3 +60,19 @@ CREATE TABLE IF NOT EXISTS adapter_calls (
   enrollment_id TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS adapter_calls_enrollment ON adapter_calls (enrollment_id);
+
+-- Every attempt to enter the professional area with DoctorID.
+CREATE TABLE IF NOT EXISTS login_events (
+  id               INTEGER PRIMARY KEY,
+  at               TEXT NOT NULL,
+  outcome          TEXT NOT NULL,
+  reason           TEXT NOT NULL DEFAULT '',
+  practitioner_id  INTEGER NOT NULL DEFAULT 0,
+  collegiate_number TEXT NOT NULL DEFAULT '',
+  subject          TEXT NOT NULL DEFAULT '',
+  acr              TEXT NOT NULL DEFAULT '',
+  amr              TEXT NOT NULL DEFAULT '',
+  claims           TEXT NOT NULL DEFAULT '',
+  detail           TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS login_events_practitioner ON login_events (practitioner_id);

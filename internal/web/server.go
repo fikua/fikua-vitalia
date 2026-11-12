@@ -1,5 +1,6 @@
-// Package web is the clinic's operator UI and the HTTP entry point that
-// also mounts the webhook receiver.
+// Package web is Clínica Vitalia's HTTP entry point: the public website,
+// the professional area where physicians sign in with DoctorID, the
+// management area (HR) that enrols them, and the webhook receiver.
 package web
 
 import (
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/store"
 )
@@ -45,9 +47,11 @@ type Server struct {
 	store    *store.Store
 	service  *enrollment.Service
 	webhook  http.Handler
+	login    *doctorlogin.Client // nil when DoctorID login is not configured
 	logger   *slog.Logger
 	pages    map[string]*template.Template
-	sessions sessions
+	sessions sessions // management staff
+	doctors  sessions // physicians signed in with DoctorID
 	loc      *time.Location
 }
 
@@ -55,17 +59,18 @@ type Server struct {
 const WebhookPath = "/webhooks/enrollments"
 
 // New builds the server.
-func New(cfg Config, st *store.Store, svc *enrollment.Service, webhook http.Handler, logger *slog.Logger) (*Server, error) {
+func New(cfg Config, st *store.Store, svc *enrollment.Service, webhook http.Handler, login *doctorlogin.Client, logger *slog.Logger) (*Server, error) {
 	loc, err := time.LoadLocation("Europe/Madrid")
 	if err != nil {
 		loc = time.UTC
 	}
-	s := &Server{cfg: cfg, store: st, service: svc, webhook: webhook, logger: logger, pages: map[string]*template.Template{}, loc: loc}
+	s := &Server{cfg: cfg, store: st, service: svc, webhook: webhook, login: login, logger: logger, pages: map[string]*template.Template{}, loc: loc}
 	funcs := template.FuncMap{
 		"stateLabel": stateLabel, "stateTone": stateTone, "causeLabel": causeLabel,
 		"time": s.fmtTime, "timep": s.fmtTimePtr, "pretty": prettyJSON, "deref": deref,
 		"dataValue": dataValue, "eventLabel": eventLabel, "webhookTone": webhookTone,
 		"initials": initials, "filterHref": filterHref, "operationLabel": operationLabel,
+		"titleCase": titleCase, "acrLabel": acrLabel, "reasonLabel": reasonLabel, "join": strings.Join,
 	}
 	assets, err := assetVersions()
 	if err != nil {
@@ -92,27 +97,55 @@ func New(cfg Config, st *store.Store, svc *enrollment.Service, webhook http.Hand
 
 // Handler returns the full HTTP handler.
 func (s *Server) Handler() http.Handler {
-	ui := http.NewServeMux()
-	ui.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/profesionales", http.StatusSeeOther)
+	cop := http.NewCrossOriginProtection()
+
+	// Management area (HR): staff session required.
+	admin := http.NewServeMux()
+	admin.HandleFunc("GET /gestion", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/gestion/profesionales", http.StatusSeeOther)
 	})
-	ui.HandleFunc("GET /profesionales", s.list)
-	ui.HandleFunc("GET /profesionales/nuevo", s.newForm)
-	ui.HandleFunc("POST /profesionales", s.create)
-	ui.HandleFunc("GET /profesionales/{id}", s.detail)
-	ui.HandleFunc("POST /profesionales/{id}/inscribir", s.enrolAgain)
-	ui.HandleFunc("POST /inscripciones/{id}/{action}", s.act)
-	ui.HandleFunc("GET /registro", s.techLog)
-	ui.HandleFunc("POST /logout", s.logout)
+	admin.HandleFunc("GET /gestion/profesionales", s.list)
+	admin.HandleFunc("GET /gestion/profesionales/nuevo", s.newForm)
+	admin.HandleFunc("POST /gestion/profesionales", s.create)
+	admin.HandleFunc("GET /gestion/profesionales/{id}", s.detail)
+	admin.HandleFunc("POST /gestion/profesionales/{id}/inscribir", s.enrolAgain)
+	admin.HandleFunc("POST /gestion/profesionales/{id}/desvincular", s.unbind)
+	admin.HandleFunc("POST /gestion/inscripciones/{id}/{action}", s.act)
+	admin.HandleFunc("GET /gestion/registro", s.techLog)
+	admin.HandleFunc("POST /gestion/salir", s.logout)
 
 	root := http.NewServeMux()
 	root.Handle("POST "+WebhookPath, s.webhook) // server-to-server: no session, no CSRF check
 	root.HandleFunc("GET /healthz", s.health)
 	static, _ := fs.Sub(staticFS, "static")
 	root.Handle("GET /static/", staticCache(http.StripPrefix("/static/", http.FileServerFS(static))))
-	root.HandleFunc("GET /login", s.loginForm)
-	root.Handle("POST /login", http.NewCrossOriginProtection().Handler(http.HandlerFunc(s.login)))
-	root.Handle("/", s.requireLogin(http.NewCrossOriginProtection().Handler(ui)))
+
+	// Public website.
+	root.HandleFunc("GET /{$}", s.home)
+
+	// Professional area: physicians sign in with DoctorID.
+	root.HandleFunc("GET /profesional", s.proHome)
+	root.HandleFunc("GET /profesional/entrar", s.proStart)
+	root.HandleFunc("GET /profesional/callback", s.proCallback)
+	root.Handle("POST /profesional/salir", cop.Handler(http.HandlerFunc(s.proLogout)))
+	if s.login != nil {
+		root.HandleFunc("GET /.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/jwk-set+json")
+			w.Header().Set("Cache-Control", "public, max-age=300")
+			_, _ = w.Write(s.login.JWKS())
+		})
+	}
+
+	root.HandleFunc("GET /gestion/acceso", s.loginForm)
+	root.Handle("POST /gestion/acceso", cop.Handler(http.HandlerFunc(s.loginPost)))
+	root.Handle("/gestion/", s.requireLogin(cop.Handler(admin)))
+	root.Handle("/gestion", s.requireLogin(cop.Handler(admin)))
+
+	// Addresses of the first version.
+	for from, to := range map[string]string{"/login": "/gestion/acceso", "/profesionales": "/gestion/profesionales",
+		"/profesionales/nuevo": "/gestion/profesionales/nuevo", "/registro": "/gestion/registro"} {
+		root.Handle("GET "+from, http.RedirectHandler(to, http.StatusMovedPermanently))
+	}
 	return securityHeaders(root)
 }
 
@@ -226,7 +259,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	} else {
 		setFlash(w, flash{Kind: "ok", Text: "Profesional dado de alta e inscripción enviada."})
 	}
-	http.Redirect(w, r, fmt.Sprintf("/profesionales/%d", p.ID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/gestion/profesionales/%d", p.ID), http.StatusSeeOther)
 }
 
 type enrollView struct {
@@ -281,6 +314,13 @@ func (s *Server) detail(w http.ResponseWriter, r *http.Request) {
 		}
 		data["Activity"] = activity(hooks, calls)
 	}
+	logins, err := s.store.LoginsOf(ctx, id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data["Logins"] = logins
+	data["LoginEnabled"] = s.login != nil
 	s.render(w, r, "detail.html", data)
 }
 
@@ -300,7 +340,7 @@ func (s *Server) enrolAgain(w http.ResponseWriter, r *http.Request) {
 	} else {
 		setFlash(w, flash{Kind: "ok", Text: "Inscripción enviada."})
 	}
-	http.Redirect(w, r, fmt.Sprintf("/profesionales/%d", p.ID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/gestion/profesionales/%d", p.ID), http.StatusSeeOther)
 }
 
 func (s *Server) act(w http.ResponseWriter, r *http.Request) {
@@ -330,7 +370,7 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request) {
 	} else {
 		setFlash(w, flash{Kind: "ok", Text: ok})
 	}
-	http.Redirect(w, r, fmt.Sprintf("/profesionales/%d", e.PractitionerID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/gestion/profesionales/%d", e.PractitionerID), http.StatusSeeOther)
 }
 
 func (s *Server) techLog(w http.ResponseWriter, r *http.Request) {
@@ -345,8 +385,17 @@ func (s *Server) techLog(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	logins, err := s.store.RecentLogins(ctx, 100)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	issuer := ""
+	if s.login != nil {
+		issuer = s.login.Issuer()
+	}
 	s.render(w, r, "log.html", map[string]any{"Title": "Registro técnico", "Nav": "log", "Webhooks": hooks,
-		"Calls": calls, "AdapterHost": s.cfg.AdapterHost, "WebhookPath": WebhookPath})
+		"Calls": calls, "Logins": logins, "Issuer": issuer, "AdapterHost": s.cfg.AdapterHost, "WebhookPath": WebhookPath})
 }
 
 // ----------------------------------------------------------------- helpers
@@ -359,6 +408,9 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 	}
 	if f, ok := takeFlash(w, r); ok {
 		data["Flash"] = f
+	}
+	if _, ok := data["Area"]; !ok {
+		data["Area"] = "admin"
 	}
 	var buf bytes.Buffer
 	if err := t.ExecuteTemplate(&buf, "layout.html", data); err != nil {

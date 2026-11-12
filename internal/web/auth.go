@@ -20,24 +20,40 @@ const (
 type sessions struct {
 	mu   sync.Mutex
 	byID map[string]time.Time
+	data map[string]any
 }
 
-func (s *sessions) create() string {
+func (s *sessions) create() string { return s.createWith(nil) }
+
+// get returns the data stored with a valid session.
+func (s *sessions) get(id string) (any, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	exp, ok := s.byID[id]
+	if !ok || time.Now().After(exp) {
+		return nil, false
+	}
+	return s.data[id], true
+}
+
+func (s *sessions) createWith(v any) string {
 	var b [32]byte
 	_, _ = rand.Read(b[:])
 	id := base64.RawURLEncoding.EncodeToString(b[:])
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.byID == nil {
-		s.byID = map[string]time.Time{}
+		s.byID, s.data = map[string]time.Time{}, map[string]any{}
 	}
 	now := time.Now()
 	for k, exp := range s.byID { // drop expired ones
 		if now.After(exp) {
 			delete(s.byID, k)
+			delete(s.data, k)
 		}
 	}
 	s.byID[id] = now.Add(sessionTTL)
+	s.data[id] = v
 	return id
 }
 
@@ -52,6 +68,7 @@ func (s *sessions) delete(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.byID, id)
+	delete(s.data, id)
 }
 
 // equalSecret compares in constant time regardless of length.
@@ -64,7 +81,7 @@ func (s *Server) requireLogin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(sessionCookie)
 		if err != nil || !s.sessions.valid(c.Value) {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			http.Redirect(w, r, "/gestion/acceso", http.StatusSeeOther)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -72,23 +89,23 @@ func (s *Server) requireLogin(next http.Handler) http.Handler {
 }
 
 func (s *Server) loginForm(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, "login.html", map[string]any{"Title": "Acceso"})
+	s.render(w, r, "admin_login.html", map[string]any{"Title": "Acceso a gestión", "Area": "admin-out"})
 }
 
-func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 	userOK := equalSecret(r.PostFormValue("user"), s.cfg.UIUser)
 	passOK := equalSecret(r.PostFormValue("password"), s.cfg.UIPassword)
 	if !userOK || !passOK {
 		s.logger.Warn("failed login", "remote", r.RemoteAddr)
 		w.WriteHeader(http.StatusUnauthorized)
-		s.render(w, r, "login.html", map[string]any{"Title": "Acceso", "Error": "Usuario o contraseña incorrectos."})
+		s.render(w, r, "admin_login.html", map[string]any{"Title": "Acceso a gestión", "Area": "admin-out", "Error": "Usuario o contraseña incorrectos."})
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: s.sessions.create(), Path: "/", HttpOnly: true,
 		Secure: s.cfg.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: int(sessionTTL.Seconds()),
 	})
-	http.Redirect(w, r, "/profesionales", http.StatusSeeOther)
+	http.Redirect(w, r, "/gestion/profesionales", http.StatusSeeOther)
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -96,5 +113,5 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		s.sessions.delete(c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.cfg.CookieSecure})
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	http.Redirect(w, r, "/gestion/acceso", http.StatusSeeOther)
 }

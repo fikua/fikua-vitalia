@@ -1,7 +1,7 @@
 {{define "content"}}
 <section class="hero hero-compact">
   <div class="wrap">
-    <p class="crumbs"><a href="/profesionales">Profesionales</a> <svg class="i"><use href="#i-chevron"/></svg> Ficha</p>
+    <p class="crumbs"><a href="/gestion/profesionales">Profesionales</a> <svg class="i"><use href="#i-chevron"/></svg> Ficha</p>
     <div class="profile">
       <span class="avatar xl">{{initials .P.FullName}}</span>
       <div class="profile-main">
@@ -60,8 +60,8 @@
           <h2>Revisa los datos de su DoctorID</h2>
           <p>Comprueba que los datos del colegio corresponden a la persona que has dado de alta y confirma o rechaza.</p>
         {{else if eq .State "COMPLETED"}}
-          <h2>Profesional verificado</h2>
-          <p>Confirmaste sus datos. Puede identificarse en la clínica con su DoctorID.</p>
+          <h2>Acceso con DoctorID habilitado</h2>
+          <p>Confirmaste sus datos. Ya puede entrar en el Área profesional de Vitalia con su DoctorID.</p>
         {{else if eq .State "REJECTED_BY_REGISTRY"}}
           <h2>El registro colegial no reconoce este número</h2>
           <p>El número de colegiado no corresponde al documento indicado. Revisa los datos con el profesional y dalo de alta de nuevo con los correctos.</p>
@@ -90,15 +90,15 @@
 
         <div class="actions">
           {{if .State.CanDecide}}
-          <form method="post" action="/inscripciones/{{.ID}}/confirmar"><button class="primary" type="submit"><svg class="i"><use href="#i-check"/></svg>Confirmar datos</button></form>
-          <form method="post" action="/inscripciones/{{.ID}}/rechazar"><button class="danger" type="submit"><svg class="i"><use href="#i-x"/></svg>Rechazar datos</button></form>
+          <form method="post" action="/gestion/inscripciones/{{.ID}}/confirmar"><button class="primary" type="submit"><svg class="i"><use href="#i-check"/></svg>Confirmar datos</button></form>
+          <form method="post" action="/gestion/inscripciones/{{.ID}}/rechazar"><button class="danger" type="submit"><svg class="i"><use href="#i-x"/></svg>Rechazar datos</button></form>
           {{end}}
           {{if .State.Final}}
-          <form method="post" action="/profesionales/{{$cur.PractitionerID}}/inscribir"><button class="primary" type="submit"><svg class="i"><use href="#i-refresh"/></svg>Volver a inscribir</button></form>
+          <form method="post" action="/gestion/profesionales/{{$cur.PractitionerID}}/inscribir"><button class="primary" type="submit"><svg class="i"><use href="#i-refresh"/></svg>Volver a inscribir</button></form>
           {{end}}
-          <form method="post" action="/inscripciones/{{.ID}}/refrescar"><button type="submit"><svg class="i"><use href="#i-refresh"/></svg>Consultar estado</button></form>
+          <form method="post" action="/gestion/inscripciones/{{.ID}}/refrescar"><button type="submit"><svg class="i"><use href="#i-refresh"/></svg>Consultar estado</button></form>
           {{if .State.CanCancel}}
-          <form method="post" action="/inscripciones/{{.ID}}/cancelar"><button class="ghost" type="submit">Cancelar inscripción</button></form>
+          <form method="post" action="/gestion/inscripciones/{{.ID}}/cancelar"><button class="ghost" type="submit">Cancelar inscripción</button></form>
           {{end}}
         </div>
       </section>
@@ -126,7 +126,24 @@
         </dl>
       </section>
       <section class="card soft">
-        <h2>Inscripción</h2>
+        <h2><svg class="i"><use href="#i-shield"/></svg> Acceso con DoctorID</h2>
+        {{if and (eq .State "COMPLETED") (not .InvalidatedReason)}}<p><span class="pill ok">Habilitado</span></p>{{else}}<p><span class="pill off">No habilitado</span></p>{{end}}
+        {{if $.P.DoctorIDSubject}}
+        <dl class="kv single">
+          <dt>DoctorID vinculado (sub)</dt><dd class="mono small">{{$.P.DoctorIDSubject}}</dd>
+          <dt>Emisor</dt><dd class="mono small">{{$.P.DoctorIDIssuer}}</dd>
+        </dl>
+        <form method="post" action="/gestion/profesionales/{{$.P.ID}}/desvincular"><button class="ghost" type="submit">Desvincular DoctorID</button></form>
+        {{else}}<p class="small muted">Se vinculará su DoctorID en su primer acceso.</p>{{end}}
+        {{if $.Logins}}
+        <h3>Últimos accesos</h3>
+        <ul class="plain">
+        {{range $.Logins}}<li><span class="pill {{if eq .Outcome "granted"}}ok{{else}}bad{{end}}">{{if eq .Outcome "granted"}}Permitido{{else}}Denegado{{end}}</span><span class="small muted">{{time .At}}{{if .Reason}} · {{.Reason}}{{end}}</span></li>{{end}}
+        </ul>
+        {{end}}
+      </section>
+      <section class="card soft">
+        <h2>Enrolamiento</h2>
         <dl class="kv single">
           <dt>Identificador</dt><dd class="mono small">{{.ID}}</dd>
           <dt>Estado</dt><dd class="mono">{{.State}}</dd>
@@ -167,7 +184,7 @@
   <section class="card state-card tone-bad">
     <h2>Sin inscripción</h2>
     <p>La inscripción no se pudo enviar. Revisa el registro técnico y vuelve a intentarlo.</p>
-    <form method="post" action="/profesionales/{{.P.ID}}/inscribir"><button class="primary" type="submit"><svg class="i"><use href="#i-refresh"/></svg>Inscribir</button></form>
+    <form method="post" action="/gestion/profesionales/{{.P.ID}}/inscribir"><button class="primary" type="submit"><svg class="i"><use href="#i-refresh"/></svg>Inscribir</button></form>
   </section>
 {{end}}
 </div>

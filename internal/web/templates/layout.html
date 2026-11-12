@@ -37,25 +37,39 @@
     <span>Clínica Vitalia · Barcelona</span>
     <span class="utility-right">
       <span class="env-chip">Entorno de pruebas · datos sintéticos</span>
-      {{if .Nav}}<span class="utility-user">Equipo de admisión</span>
-      <form method="post" action="/logout"><button class="utility-link" type="submit"><svg class="i"><use href="#i-logout"/></svg>Salir</button></form>{{end}}
+      <a class="utility-link" href="/profesional">Área profesional</a>
+      <a class="utility-link" href="/gestion/profesionales">Gestión</a>
+      {{if eq .Area "admin"}}<form method="post" action="/gestion/salir"><button class="utility-link" type="submit"><svg class="i"><use href="#i-logout"/></svg>Salir de gestión</button></form>{{end}}
     </span>
   </div>
 </div>
 <header class="site-header">
   <div class="wrap header-inner">
-    <a class="brand" href="/profesionales" aria-label="Clínica Vitalia, inicio">
+    <a class="brand" href="{{if eq .Area "pro"}}/profesional{{else if eq .Area "admin"}}/gestion/profesionales{{else}}/{{end}}" aria-label="Clínica Vitalia">
       <img src="{{asset "favicon.svg"}}" alt="" width="40" height="40">
-      <span class="brand-text"><strong>Clínica <em>Vitalia</em></strong><small>Salud que te acompaña</small></span>
+      <span class="brand-text"><strong>Clínica <em>Vitalia</em></strong><small>{{if eq .Area "pro"}}Área profesional{{else if or (eq .Area "admin") (eq .Area "admin-out")}}Gestión de profesionales · RR. HH.{{else}}Salud que te acompaña{{end}}</small></span>
     </a>
-    {{if .Nav}}
-    <nav class="main-nav" aria-label="Principal">
-      <a href="/profesionales" {{if eq .Nav "list"}}aria-current="page"{{end}}>Profesionales</a>
-      <a href="/registro" {{if eq .Nav "log"}}aria-current="page"{{end}}>Registro técnico</a>
-      <a class="button primary nav-cta" href="/profesionales/nuevo" {{if eq .Nav "new"}}aria-current="page"{{end}}><svg class="i"><use href="#i-user-plus"/></svg>Alta de profesional</a>
+    {{if eq .Area "admin"}}
+    <nav class="main-nav" aria-label="Gestión">
+      <a href="/gestion/profesionales" {{if eq .Nav "list"}}aria-current="page"{{end}}>Profesionales</a>
+      <a href="/gestion/registro" {{if eq .Nav "log"}}aria-current="page"{{end}}>Registro técnico</a>
+      <a class="button primary nav-cta" href="/gestion/profesionales/nuevo"><svg class="i"><use href="#i-user-plus"/></svg>Alta de profesional</a>
     </nav>
+    {{else if eq .Area "pro"}}
+      {{with .Doctor}}
+      <div class="main-nav">
+        <span class="who"><span class="avatar sm">{{initials (print .Identity.GivenName " " .Identity.FamilyName)}}</span>{{titleCase .Identity.GivenName}} {{titleCase .Identity.FamilyName}}</span>
+        <form method="post" action="/profesional/salir"><button class="ghost" type="submit"><svg class="i"><use href="#i-logout"/></svg>Cerrar sesión</button></form>
+      </div>
+      {{else}}<span class="header-tag"><svg class="i"><use href="#i-shield"/></svg>Acceso con DoctorID</span>{{end}}
+    {{else if eq .Area "admin-out"}}
+    <span class="header-tag"><svg class="i"><use href="#i-lock"/></svg>Acceso restringido</span>
     {{else}}
-    <span class="header-tag"><svg class="i"><use href="#i-lock"/></svg>Portal interno</span>
+    <nav class="main-nav" aria-label="Principal">
+      <a href="/#especialidades">Especialidades</a>
+      <a href="/#profesionales">Profesionales</a>
+      <a class="button primary nav-cta" href="/profesional"><svg class="i"><use href="#i-steth"/></svg>Área profesional</a>
+    </nav>
     {{end}}
   </div>
 </header>
@@ -80,21 +94,21 @@
   <div class="wrap footer-grid">
     <div>
       <p class="footer-brand"><img src="{{asset "favicon.svg"}}" alt="" width="32" height="32"> Clínica Vitalia</p>
-      <p>Clínica Vitalia es una plataforma sanitaria <strong>ficticia</strong>. Sirve para probar, como lo haría un centro real, la verificación de profesionales con DoctorID.</p>
+      <p>Clínica Vitalia es una clínica <strong>ficticia</strong>. Sus médicos entran en sus sistemas con DoctorID, como lo haría cualquier centro sanitario integrado con el Consejo General de Colegios de Médicos.</p>
     </div>
     <div>
-      <h2>Portal de admisión</h2>
+      <h2>Accesos</h2>
       <ul>
-        <li><a href="/profesionales">Profesionales</a></li>
-        <li><a href="/profesionales/nuevo">Alta de profesional</a></li>
-        <li><a href="/registro">Registro técnico</a></li>
+        <li><a href="/">Inicio</a></li>
+        <li><a href="/profesional">Área profesional</a></li>
+        <li><a href="/gestion/profesionales">Gestión de profesionales</a></li>
       </ul>
     </div>
     <div>
       <h2>Integración DoctorID</h2>
       <ul>
-        <li>Comunicación servidor a servidor</li>
-        <li>Avisos firmados con HMAC-SHA256</li>
+        <li>Alta de médicos servidor a servidor</li>
+        <li>Inicio de sesión con OpenID Connect</li>
         <li><a href="/healthz">Estado del servicio</a></li>
       </ul>
     </div>

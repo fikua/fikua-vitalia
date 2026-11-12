@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/idpstub"
 	"github.com/fikua/fikua-vitalia/internal/webhook"
 )
 
@@ -225,9 +226,17 @@ var (
 	ErrNotAllowed   = errors.New("action not allowed in this state")
 )
 
+// ActOptions refine an action: the registry name for "obtain".
+type ActOptions struct{ GivenName, FamilyName string }
+
 // Act moves an enrolment as the physician, the registry or the clock would,
 // and sends the webhook the contract says.
 func (s *Stub) Act(ctx context.Context, id, action string) (Sent, error) {
+	return s.ActWith(ctx, id, action, ActOptions{})
+}
+
+// ActWith is Act with options.
+func (s *Stub) ActWith(ctx context.Context, id, action string, opt ActOptions) (Sent, error) {
 	s.mu.Lock()
 	rec, ok := s.recs[id]
 	if !ok {
@@ -244,6 +253,12 @@ func (s *Stub) Act(ctx context.Context, id, action string) (Sent, error) {
 		}
 		s.move(rec, adapter.PendingConfirmation)
 		rec.e.DoctorID = s.doctorID(rec.e.CollegiateNumber, s.now())
+		if opt.GivenName != "" {
+			rec.e.DoctorID.Data["givenName"] = strings.ToUpper(strings.TrimSpace(opt.GivenName))
+		}
+		if opt.FamilyName != "" {
+			rec.e.DoctorID.Data["familyName"] = strings.ToUpper(strings.TrimSpace(opt.FamilyName))
+		}
 		rec.e.IssuancePortalURL, rec.e.AuthSourcesCause = nil, nil
 	case "mismatch", "dispute":
 		if st != adapter.Initiated && st != adapter.PendingAuthSources {
@@ -361,4 +376,26 @@ func problem(w http.ResponseWriter, status int, typ, detail string, v []adapter.
 	_ = json.NewEncoder(w).Encode(adapter.Problem{
 		Type: typ, Title: http.StatusText(status), Status: status, Detail: detail, Instance: "/", Violations: v,
 	})
+}
+
+// Holders returns one wallet entry per registration number that has a
+// DoctorID in the stub (enrolments in PENDING_CONFIRMATION or COMPLETED).
+func (s *Stub) Holders() []idpstub.Holder {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seen := map[string]bool{}
+	var out []idpstub.Holder
+	for i := len(s.ord) - 1; i >= 0; i-- {
+		e := s.recs[s.ord[i]].e
+		if e.DoctorID == nil || seen[e.CollegiateNumber] {
+			continue
+		}
+		seen[e.CollegiateNumber] = true
+		d := e.DoctorID.Data
+		given, _ := d["givenName"].(string)
+		family, _ := d["familyName"].(string)
+		out = append(out, idpstub.Holder{CollegiateNumber: e.CollegiateNumber, GivenName: given, FamilyName: family,
+			Data: d, Note: "inscripción " + string(e.State)})
+	}
+	return out
 }

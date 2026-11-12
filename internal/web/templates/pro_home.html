@@ -1,0 +1,57 @@
+{{define "content"}}
+{{$id := .Doctor.Identity}}
+<section class="hero hero-compact">
+  <div class="wrap">
+    <div class="profile">
+      <span class="avatar xl">{{initials (print $id.GivenName " " $id.FamilyName)}}</span>
+      <div class="profile-main">
+        <p class="eyebrow">Área profesional</p>
+        <h1>Hola, {{titleCase $id.GivenName}}</h1>
+        <p class="chips">
+          {{with .P.Specialty}}<span class="chip"><svg class="i"><use href="#i-steth"/></svg>{{.}}</span>{{end}}
+          <span class="chip"><svg class="i"><use href="#i-id"/></svg>Colegiado <span class="mono">{{$id.CollegiateNumber}}</span></span>
+          <span class="chip"><svg class="i"><use href="#i-shield"/></svg>Entraste con DoctorID</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap two-col">
+  <section class="card">
+    <div class="section-head"><h2><svg class="i"><use href="#i-clock"/></svg> Tu agenda de hoy</h2><span class="muted small">Datos de ejemplo</span></div>
+    <ol class="agenda">
+      {{range .Agenda}}
+      <li><span class="agenda-time">{{.Time}}</span><span><strong>{{.Patient}}</strong><small>{{.Reason}} · {{.Room}}</small></span></li>
+      {{end}}
+    </ol>
+  </section>
+
+  <aside class="stack">
+    <section class="card soft">
+      <h2><svg class="i"><use href="#i-shield"/></svg> Tu identidad verificada</h2>
+      <dl class="kv single">
+        <dt>Nombre</dt><dd>{{titleCase $id.GivenName}} {{titleCase $id.FamilyName}}</dd>
+        <dt>Nº de colegiado</dt><dd class="mono">{{$id.CollegiateNumber}}</dd>
+        {{with index $id.Claims "medical_board"}}<dt>Colegio</dt><dd>{{dataValue .}}</dd>{{end}}
+        {{with index $id.Claims "medical_speciality"}}<dt>Especialidad</dt><dd>{{dataValue .}}</dd>{{end}}
+        <dt>Nivel de seguridad</dt><dd>{{acrLabel $id.ACR}}</dd>
+        <dt>Método</dt><dd class="mono">{{join $id.AMR ", "}}{{with $id.CredentialType}} · {{.}}{{end}}</dd>
+        <dt>Acceso</dt><dd>{{time .Doctor.LoginAt}}</dd>
+      </dl>
+      <details>
+        <summary class="small">Ver el ID Token recibido</summary>
+        <pre>{{$id.RawClaims}}</pre>
+      </details>
+    </section>
+    <section class="card soft">
+      <h2>Tu ficha en Vitalia</h2>
+      <dl class="kv single">
+        <dt>Nombre en la ficha</dt><dd>{{.P.FullName}}</dd>
+        {{with .P.Email}}<dt>Correo</dt><dd>{{.}}</dd>{{end}}
+        <dt>Alta en la clínica</dt><dd>{{time .P.CreatedAt}}</dd>
+      </dl>
+    </section>
+  </aside>
+</div>
+{{end}}

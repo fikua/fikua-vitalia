@@ -37,7 +37,7 @@ func newServer(t *testing.T) *httptest.Server {
 	client := adapter.NewClient(u, &http.Client{Timeout: 5 * time.Second}, adapter.StaticTokenSource("tok"), st)
 	svc := enrollment.New(st, client, logger, false)
 	receiver := &webhook.Receiver{Secret: secret, Tolerance: 5 * time.Minute, Sink: st, Logger: logger}
-	ui, err := web.New(web.Config{UIUser: "admision", UIPassword: "pass-de-pruebas"}, st, svc, receiver, logger)
+	ui, err := web.New(web.Config{UIUser: "admision", UIPassword: "pass-de-pruebas"}, st, svc, receiver, nil, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func noRedirect() *http.Client {
 
 func login(t *testing.T, srv *httptest.Server, password string) *http.Response {
 	t.Helper()
-	resp, err := noRedirect().PostForm(srv.URL+"/login", url.Values{"user": {"admision"}, "password": {password}})
+	resp, err := noRedirect().PostForm(srv.URL+"/gestion/acceso", url.Values{"user": {"admision"}, "password": {password}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,13 +62,13 @@ func login(t *testing.T, srv *httptest.Server, password string) *http.Response {
 
 func TestUIRequiresLogin(t *testing.T) {
 	srv := newServer(t)
-	for _, path := range []string{"/profesionales", "/registro", "/profesionales/nuevo"} {
+	for _, path := range []string{"/gestion/profesionales", "/gestion/registro", "/gestion/profesionales/nuevo"} {
 		resp, err := noRedirect().Get(srv.URL + path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
-		if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/login" {
+		if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/gestion/acceso" {
 			t.Errorf("%s: %d %s, want redirect to /login", path, resp.StatusCode, resp.Header.Get("Location"))
 		}
 	}
@@ -86,7 +86,7 @@ func TestLoginEnrolAndCrossOriginPost(t *testing.T) {
 	cookie := resp.Cookies()[0]
 
 	form := url.Values{"full_name": {"Laia Puig"}, "administrative_number": {"12345678Z"}, "collegiate_number": {"282812345"}}
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/profesionales", strings.NewReader(form.Encode()))
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/gestion/profesionales", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(cookie)
 	resp, err := noRedirect().Do(req)
@@ -94,12 +94,12 @@ func TestLoginEnrolAndCrossOriginPost(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(resp.Header.Get("Location"), "/profesionales/") {
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(resp.Header.Get("Location"), "/gestion/profesionales/") {
 		t.Fatalf("enrol: %d %s", resp.StatusCode, resp.Header.Get("Location"))
 	}
 
 	// The same POST from another site is refused.
-	req, _ = http.NewRequest(http.MethodPost, srv.URL+"/profesionales", strings.NewReader(form.Encode()))
+	req, _ = http.NewRequest(http.MethodPost, srv.URL+"/gestion/profesionales", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	req.AddCookie(cookie)
@@ -113,7 +113,7 @@ func TestLoginEnrolAndCrossOriginPost(t *testing.T) {
 	}
 
 	// The detail page renders.
-	req, _ = http.NewRequest(http.MethodGet, srv.URL+"/profesionales/1", nil)
+	req, _ = http.NewRequest(http.MethodGet, srv.URL+"/gestion/profesionales/1", nil)
 	req.AddCookie(cookie)
 	resp, err = noRedirect().Do(req)
 	if err != nil {
@@ -146,7 +146,7 @@ func TestWebhookAndHealthNeedNoSession(t *testing.T) {
 
 func TestStaticAssetsAreVersioned(t *testing.T) {
 	srv := newServer(t)
-	resp, err := http.Get(srv.URL + "/login")
+	resp, err := http.Get(srv.URL + "/gestion/acceso")
 	if err != nil {
 		t.Fatal(err)
 	}

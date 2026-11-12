@@ -4,12 +4,15 @@
 package config
 
 import (
+	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 )
 
 // Config is the parsed configuration. It holds secrets: never log it whole.
@@ -26,6 +29,15 @@ type Config struct {
 	WebhookSecret      []byte
 	SignatureTolerance time.Duration
 	RefreshOnWebhook   bool
+
+	// DoctorID login of the physicians (OIDC relying party). Disabled when
+	// OIDCIssuer is empty.
+	PublicURL      *url.URL
+	OIDCIssuer     string
+	OIDCClientID   string
+	OIDCScopes     []string
+	OIDCACR        string
+	OIDCSigningKey *ecdsa.PrivateKey
 
 	// Operator UI.
 	UIUser       string
@@ -87,6 +99,27 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, errors.New("VITALIA_ADAPTER_BASE_URL must use http or https"))
 		default:
 			c.AdapterBaseURL = u
+		}
+	}
+
+	if raw := get("VITALIA_PUBLIC_URL", "http://localhost:8080"); raw != "" {
+		u, err := url.Parse(strings.TrimRight(raw, "/"))
+		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+			errs = append(errs, errors.New("VITALIA_PUBLIC_URL must be an absolute http(s) URL"))
+		} else {
+			c.PublicURL = u
+		}
+	}
+	if c.OIDCIssuer = strings.TrimSpace(getenv("VITALIA_OIDC_ISSUER")); c.OIDCIssuer != "" {
+		c.OIDCClientID = get("VITALIA_OIDC_CLIENT_ID", "vitalia")
+		c.OIDCScopes = strings.Fields(get("VITALIA_OIDC_SCOPES", "openid profile doctorid"))
+		c.OIDCACR = strings.TrimSpace(getenv("VITALIA_OIDC_ACR"))
+		if raw := required("VITALIA_OIDC_SIGNING_KEY"); raw != "" {
+			key, err := doctorlogin.ParseSigningKey(raw)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("VITALIA_OIDC_SIGNING_KEY: %v", err))
+			}
+			c.OIDCSigningKey = key
 		}
 	}
 

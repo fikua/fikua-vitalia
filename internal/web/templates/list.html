@@ -1,20 +1,20 @@
 {{define "content"}}
 <section class="hero">
   <div class="wrap">
-    <p class="eyebrow">Equipo de admisión</p>
+    <p class="eyebrow">Recursos Humanos · Gestión de profesionales</p>
     <h1>¿Qué necesitas hacer hoy?</h1>
     <div class="quick-grid">
-      <a class="quick-card" href="/profesionales/nuevo">
+      <a class="quick-card" href="/gestion/profesionales/nuevo">
         <span class="quick-icon"><svg class="i"><use href="#i-user-plus"/></svg></span>
-        <span><strong>Dar de alta un profesional</strong><small>Registra al médico y pide su verificación DoctorID.</small></span>
+        <span><strong>Dar de alta un profesional</strong><small>Registra a un médico y habilita su acceso con DoctorID.</small></span>
         <svg class="i quick-arrow"><use href="#i-arrow"/></svg>
       </a>
-      <a class="quick-card {{if index .Counts "revision"}}attention{{end}}" href="/profesionales?estado=revision">
+      <a class="quick-card {{if index .Counts "revision"}}attention{{end}}" href="/gestion/profesionales?estado=revision">
         <span class="quick-icon"><svg class="i"><use href="#i-clipboard"/></svg></span>
         <span><strong>Revisar datos pendientes</strong><small>{{with index .Counts "revision"}}{{.}} {{if eq . 1}}profesional espera{{else}}profesionales esperan{{end}} tu confirmación.{{else}}No hay nada pendiente de revisar.{{end}}</small></span>
         <svg class="i quick-arrow"><use href="#i-arrow"/></svg>
       </a>
-      <a class="quick-card" href="/registro">
+      <a class="quick-card" href="/gestion/registro">
         <span class="quick-icon"><svg class="i"><use href="#i-activity"/></svg></span>
         <span><strong>Consultar el registro técnico</strong><small>Llamadas al sistema DoctorID y avisos recibidos.</small></span>
         <svg class="i quick-arrow"><use href="#i-arrow"/></svg>
@@ -28,12 +28,12 @@
     <div class="stat"><span class="stat-icon blue"><svg class="i"><use href="#i-users"/></svg></span><span><strong>{{.Total}}</strong>Profesionales</span></div>
     <div class="stat"><span class="stat-icon teal"><svg class="i"><use href="#i-clipboard"/></svg></span><span><strong>{{index .Counts "revision"}}</strong>Por revisar</span></div>
     <div class="stat"><span class="stat-icon sky"><svg class="i"><use href="#i-clock"/></svg></span><span><strong>{{index .Counts "espera"}}</strong>Esperando al médico</span></div>
-    <div class="stat"><span class="stat-icon green"><svg class="i"><use href="#i-check"/></svg></span><span><strong>{{index .Counts "verificados"}}</strong>Verificados</span></div>
+    <div class="stat"><span class="stat-icon green"><svg class="i"><use href="#i-check"/></svg></span><span><strong>{{index .Counts "verificados"}}</strong>Con acceso habilitado</span></div>
   </div>
 
   <section class="section">
     <div class="section-head">
-      <h2>Profesionales</h2>
+      <h2>Médicos de la clínica</h2>
       <nav class="tabs" aria-label="Filtrar por estado">
         {{range .Filters}}
         <a href="{{filterHref .}}" {{if eq . $.Filter}}aria-current="true"{{end}}>{{index $.FilterLabels .}} <span class="count">{{index $.Counts .}}</span></a>
@@ -45,7 +45,7 @@
     <ul class="people">
       {{range .Rows}}
       <li>
-        <a class="person" href="/profesionales/{{.ID}}">
+        <a class="person" href="/gestion/profesionales/{{.ID}}">
           <span class="avatar">{{initials .FullName}}</span>
           <span class="person-main">
             <strong>{{.FullName}}</strong>
@@ -64,13 +64,13 @@
       {{end}}
     </ul>
     {{else if .Total}}
-    <div class="card empty"><p>No hay profesionales en «{{index .FilterLabels .Filter}}».</p><a class="button" href="/profesionales">Ver todos</a></div>
+    <div class="card empty"><p>No hay profesionales en «{{index .FilterLabels .Filter}}».</p><a class="button" href="/gestion/profesionales">Ver todos</a></div>
     {{else}}
     <div class="card empty">
       <span class="empty-icon"><svg class="i"><use href="#i-steth"/></svg></span>
       <h3>Aún no hay profesionales</h3>
       <p class="muted">Da de alta al primero con su DNI, NIE o pasaporte y su número de colegiado.</p>
-      <a class="button primary" href="/profesionales/nuevo"><svg class="i"><use href="#i-user-plus"/></svg>Dar de alta un profesional</a>
+      <a class="button primary" href="/gestion/profesionales/nuevo"><svg class="i"><use href="#i-user-plus"/></svg>Dar de alta un profesional</a>
     </div>
     {{end}}
   </section>

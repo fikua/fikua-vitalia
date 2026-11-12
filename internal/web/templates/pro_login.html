@@ -1,0 +1,28 @@
+{{define "content"}}
+<section class="login">
+  <div class="wrap login-grid">
+    <div class="login-intro">
+      <p class="eyebrow">Área profesional</p>
+      <h1>Tu espacio de trabajo en Clínica Vitalia</h1>
+      <ul class="feature-list">
+        <li><span class="feature-icon"><svg class="i"><use href="#i-clock"/></svg></span><span><strong>Tu agenda del día</strong>Pacientes, horarios y consultas.</span></li>
+        <li><span class="feature-icon"><svg class="i"><use href="#i-shield"/></svg></span><span><strong>Identidad verificada</strong>Tu colegio confirma que eres médico colegiado y habilitado.</span></li>
+        <li><span class="feature-icon"><svg class="i"><use href="#i-lock"/></svg></span><span><strong>Sin contraseñas</strong>Presentas tu DoctorID desde la cartera de tu móvil.</span></li>
+      </ul>
+    </div>
+    <div class="card login-card">
+      <h2>Acceder</h2>
+      <p class="muted">Identifícate con tu DoctorID. Te llevaremos al servicio de identificación del Consejo de Colegios de Médicos y volverás aquí.</p>
+      {{if .LoginEnabled}}
+      <a class="button primary block doctorid-button" href="/profesional/entrar"><svg class="i"><use href="#i-shield"/></svg>Acceder con DoctorID</a>
+      {{else}}
+      <p class="field-error"><svg class="i"><use href="#i-alert"/></svg>El acceso con DoctorID no está configurado en este entorno.</p>
+      {{end}}
+      <div class="login-help">
+        <p class="small"><strong>¿Aún no tienes DoctorID?</strong> Pide a Recursos Humanos que te den de alta. Te indicarán cómo obtenerlo en el Portal de Emisión.</p>
+      </div>
+      <p class="small muted login-alt">¿Eres de Recursos Humanos? <a href="/gestion/acceso">Acceso de gestión</a>.</p>
+    </div>
+  </div>
+</section>
+{{end}}
