@@ -5,8 +5,10 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"embed"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -65,6 +67,11 @@ func New(cfg Config, st *store.Store, svc *enrollment.Service, webhook http.Hand
 		"dataValue": dataValue, "eventLabel": eventLabel, "webhookTone": webhookTone,
 		"initials": initials, "filterHref": filterHref, "operationLabel": operationLabel,
 	}
+	assets, err := assetVersions()
+	if err != nil {
+		return nil, err
+	}
+	funcs["asset"] = func(name string) string { return "/static/" + name + "?v=" + assets[name] }
 	pages, err := fs.Glob(templateFS, "templates/*.html")
 	if err != nil {
 		return nil, err
@@ -102,11 +109,44 @@ func (s *Server) Handler() http.Handler {
 	root.Handle("POST "+WebhookPath, s.webhook) // server-to-server: no session, no CSRF check
 	root.HandleFunc("GET /healthz", s.health)
 	static, _ := fs.Sub(staticFS, "static")
-	root.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
+	root.Handle("GET /static/", staticCache(http.StripPrefix("/static/", http.FileServerFS(static))))
 	root.HandleFunc("GET /login", s.loginForm)
 	root.Handle("POST /login", http.NewCrossOriginProtection().Handler(http.HandlerFunc(s.login)))
 	root.Handle("/", s.requireLogin(http.NewCrossOriginProtection().Handler(ui)))
 	return securityHeaders(root)
+}
+
+// assetVersions hashes every static file, so templates can link
+// /static/x?v=<hash>: a new deploy changes the URL and no cache (browser or
+// Cloudflare) serves a stale stylesheet against new HTML.
+func assetVersions() (map[string]string, error) {
+	out := map[string]string{}
+	err := fs.WalkDir(staticFS, "static", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := staticFS.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(b)
+		out[strings.TrimPrefix(path, "static/")] = hex.EncodeToString(sum[:])[:12]
+		return nil
+	})
+	return out, err
+}
+
+// staticCache lets versioned URLs be cached forever and makes unversioned
+// ones revalidate.
+func staticCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("v") != "" {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func securityHeaders(next http.Handler) http.Handler {

@@ -4,9 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} · Clínica Vitalia</title>
-<link rel="preload" href="/static/fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/static/app.css">
-<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="{{asset "app.css"}}">
+<link rel="icon" href="{{asset "favicon.svg"}}" type="image/svg+xml">
 </head>
 <body>
 <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -46,7 +45,7 @@
 <header class="site-header">
   <div class="wrap header-inner">
     <a class="brand" href="/profesionales" aria-label="Clínica Vitalia, inicio">
-      <img src="/static/favicon.svg" alt="" width="40" height="40">
+      <img src="{{asset "favicon.svg"}}" alt="" width="40" height="40">
       <span class="brand-text"><strong>Clínica <em>Vitalia</em></strong><small>Salud que te acompaña</small></span>
     </a>
     {{if .Nav}}
@@ -80,7 +79,7 @@
 <footer class="site-footer">
   <div class="wrap footer-grid">
     <div>
-      <p class="footer-brand"><img src="/static/favicon.svg" alt="" width="32" height="32"> Clínica Vitalia</p>
+      <p class="footer-brand"><img src="{{asset "favicon.svg"}}" alt="" width="32" height="32"> Clínica Vitalia</p>
       <p>Clínica Vitalia es una plataforma sanitaria <strong>ficticia</strong>. Sirve para probar, como lo haría un centro real, la verificación de profesionales con DoctorID.</p>
     </div>
     <div>

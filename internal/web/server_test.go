@@ -143,3 +143,29 @@ func TestWebhookAndHealthNeedNoSession(t *testing.T) {
 	}
 	resp.Body.Close()
 }
+
+func TestStaticAssetsAreVersioned(t *testing.T) {
+	srv := newServer(t)
+	resp, err := http.Get(srv.URL + "/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), `href="/static/app.css?v=`) {
+		t.Fatal("stylesheet link is not versioned")
+	}
+	resp, err = http.Get(srv.URL + "/static/app.css?v=x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if cc := resp.Header.Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+		t.Fatalf("versioned asset Cache-Control = %q", cc)
+	}
+	resp, _ = http.Get(srv.URL + "/static/app.css")
+	resp.Body.Close()
+	if cc := resp.Header.Get("Cache-Control"); cc != "no-cache" {
+		t.Fatalf("unversioned asset Cache-Control = %q", cc)
+	}
+}
