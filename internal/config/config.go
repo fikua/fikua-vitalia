@@ -51,6 +51,12 @@ type Config struct {
 	OIDCSigningKey *ecdsa.PrivateKey // private_key_jwt (the DoctorID IdP directly); or
 	OIDCSecret     string            // client secret (the clinic's IdP, which federates DoctorID)
 
+	// The clinic's directory (Authentik API): physicians HR registers are
+	// provisioned there. Disabled when DirectoryURL is nil.
+	DirectoryURL   *url.URL
+	DirectoryToken string
+	DirectoryGroup string
+
 	// Sign-in of the management staff with the clinic's identity provider
 	// (Authentik). Disabled when StaffOIDCIssuer is empty.
 	StaffOIDCIssuer   string
@@ -162,6 +168,16 @@ func Load(getenv func(string) string) (Config, error) {
 			}
 			c.CGCOMSigningKey = key
 		}
+	}
+
+	if raw := strings.TrimSpace(getenv("VITALIA_DIRECTORY_URL")); raw != "" {
+		u, err := url.Parse(strings.TrimRight(raw, "/"))
+		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+			errs = append(errs, errors.New("VITALIA_DIRECTORY_URL must be an absolute http(s) URL"))
+		}
+		c.DirectoryURL = u
+		c.DirectoryToken = required("VITALIA_DIRECTORY_TOKEN")
+		c.DirectoryGroup = get("VITALIA_DIRECTORY_GROUP", "Vitalia Médicos")
 	}
 
 	if c.StaffOIDCIssuer = strings.TrimSpace(getenv("VITALIA_STAFF_OIDC_ISSUER")); c.StaffOIDCIssuer != "" {

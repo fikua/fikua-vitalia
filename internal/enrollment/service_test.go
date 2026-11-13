@@ -2,6 +2,7 @@ package enrollment_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/fikua/fikua-vitalia/internal/adapterstub"
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
+	"github.com/fikua/fikua-vitalia/internal/directory"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/store"
 	"github.com/fikua/fikua-vitalia/internal/webhook"
@@ -267,5 +269,36 @@ func TestEnrolValidation(t *testing.T) {
 	verr, ok := err.(*enrollment.ValidationError)
 	if !ok || len(verr.Fields) != 3 {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+type fakeDirectory struct {
+	got []string
+	err error
+}
+
+func (d *fakeDirectory) EnsurePhysician(_ context.Context, p directory.Physician) error {
+	d.got = append(d.got, p.CollegiateNumber+"|"+p.AdministrativeNumber+"|"+p.FullName)
+	return d.err
+}
+
+func TestEnrolProvisionsTheDirectoryWithoutBlockingTheEnrolment(t *testing.T) {
+	e := newEnv(t, false)
+	dir := &fakeDirectory{}
+	e.svc.Directory = dir
+	p, enr := e.enrol(t, "282812345")
+	if len(dir.got) != 1 || dir.got[0] != "282812345|12345678Z|Laia Puig Soler" || enr.State != cgcom.Initiated {
+		t.Fatalf("directory got %v, enrolment %s", dir.got, enr.State)
+	}
+
+	// The directory is down: the enrolment still goes out, and HR is told.
+	dir.err = errors.New("authentik unreachable")
+	err := e.svc.EnrolAgain(context.Background(), p)
+	var de *enrollment.DirectoryError
+	if !errors.As(err, &de) {
+		t.Fatalf("err = %v, want a DirectoryError", err)
+	}
+	if calls, _ := e.st.CallsOf(context.Background(), enr.ID); len(calls) == 0 {
+		t.Fatal("the enrolment call was not made")
 	}
 }

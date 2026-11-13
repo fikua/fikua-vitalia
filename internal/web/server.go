@@ -264,9 +264,13 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if err != nil {
+	var dirErr *enrollment.DirectoryError
+	switch {
+	case errors.As(err, &dirErr):
+		s.flashError(w, "Inscripción enviada, pero no se ha podido crear su acceso en el directorio de la clínica (Authentik). Vuelve a inscribirlo para reintentarlo.", err)
+	case err != nil:
 		s.flashError(w, "El profesional se ha guardado, pero la inscripción no se ha podido enviar.", err)
-	} else {
+	default:
 		setFlash(w, flash{Kind: "ok", Text: "Profesional dado de alta e inscripción enviada."})
 	}
 	http.Redirect(w, r, fmt.Sprintf("/gestion/profesionales/%d", p.ID), http.StatusSeeOther)
@@ -345,7 +349,10 @@ func (s *Server) enrolAgain(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.service.EnrolAgain(r.Context(), p); err != nil {
+	var dirErr *enrollment.DirectoryError
+	if err := s.service.EnrolAgain(r.Context(), p); errors.As(err, &dirErr) {
+		s.flashError(w, "Inscripción enviada, pero no se ha podido crear su acceso en el directorio de la clínica (Authentik).", err)
+	} else if err != nil {
 		s.flashError(w, "No se ha podido enviar la inscripción.", err)
 	} else {
 		setFlash(w, flash{Kind: "ok", Text: "Inscripción enviada."})

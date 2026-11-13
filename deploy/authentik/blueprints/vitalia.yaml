@@ -3,7 +3,10 @@
 # Clínica Vitalia in Authentik (2026.8). Synthetic data only.
 #
 # What it sets up, all by configuration:
-#   - groups "Vitalia RRHH" (management area) and "Vitalia Médicos";
+#   - groups "Vitalia RRHH" (management area), "Vitalia Médicos" (the
+#     physicians HR registers in Vitalia, which provisions them through the
+#     API with the vitalia-directory service account) and "Vitalia Médicos ·
+#     SCIM" (the synthetic physicians of the SCIM proposal);
 #   - the HR test account "rrhh" and five physicians. A physician's username
 #     is their registration number, and their attributes hold what the
 #     enrolment service needs (collegiate_number, administrative_number);
@@ -13,7 +16,7 @@
 #     DoctorID, so Authentik sends them straight to the DoctorID IdP. Both
 #     have a "doctorid" scope that puts the registration number in
 #     personal_administrative_number, as DoctorID does;
-#   - a SCIM 2.0 provider that sends the "Vitalia Médicos" group to the
+#   - a SCIM 2.0 provider that sends the "Vitalia Médicos · SCIM" group to the
 #     enrolment service, with a mapping that adds the enrolment extension;
 #   - the DoctorID identity provider (CGCOM Verifier) as an OIDC source on the
 #     login page. A DoctorID sign-in is linked to the account whose username
@@ -34,6 +37,39 @@ entries:
   - model: authentik_core.group
     id: group-physicians
     identifiers: {name: Vitalia Médicos}
+  - model: authentik_core.group
+    id: group-scim
+    identifiers: {name: Vitalia Médicos · SCIM}
+
+  # The service account Vitalia uses to provision the physicians HR
+  # registers: it can see and create users and put them in groups, nothing
+  # else. Its API token comes from the environment.
+  - model: authentik_rbac.role
+    id: role-directory
+    identifiers: {name: "Vitalia: alta de médicos"}
+    attrs:
+      permissions:
+        - authentik_core.view_user
+        - authentik_core.add_user
+        - authentik_core.change_user
+        - authentik_core.view_group
+        - authentik_core.add_user_to_group
+  - model: authentik_core.user
+    id: user-directory
+    identifiers: {username: vitalia-directory}
+    attrs:
+      name: Vitalia (alta de médicos)
+      type: service_account
+      path: users/vitalia/service
+      roles: [!KeyOf role-directory]
+  - model: authentik_core.token
+    identifiers: {identifier: vitalia-directory}
+    attrs:
+      intent: api
+      user: !KeyOf user-directory
+      key: !Env VITALIA_DIRECTORY_TOKEN
+      expiring: false
+      description: Vitalia provisions the physicians HR registers
 
   # ------------------------------------------------------------- people
   - model: authentik_core.user
@@ -55,7 +91,7 @@ entries:
       email: laia.puig@vitalia.example
       type: internal
       path: users/vitalia/medicos
-      groups: [!KeyOf group-physicians]
+      groups: [!KeyOf group-scim]
       attributes:
         given_name: Laia
         family_name: Puig Soler
@@ -172,7 +208,7 @@ entries:
       token: !Env ENROLMENT_SCIM_TOKEN
       compatibility_mode: default
       exclude_users_service_account: true
-      group_filters: [!KeyOf group-physicians]
+      group_filters: [!KeyOf group-scim]
       property_mappings:
         - !Find [authentik_providers_scim.scimmapping, [managed, goauthentik.io/providers/scim/user]]
         - !KeyOf scim-doctorid

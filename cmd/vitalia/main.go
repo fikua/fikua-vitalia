@@ -15,6 +15,7 @@ import (
 
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/config"
+	"github.com/fikua/fikua-vitalia/internal/directory"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/store"
@@ -57,6 +58,10 @@ func run(logger *slog.Logger) error {
 	}
 	client := cgcom.NewClient(cfg.AdapterBaseURL, &http.Client{Timeout: cfg.AdapterTimeout}, tokens, st)
 	svc := enrollment.New(st, client, logger, cfg.RefreshOnWebhook)
+	if cfg.DirectoryURL != nil {
+		svc.Directory = &directory.Authentik{BaseURL: cfg.DirectoryURL, Token: cfg.DirectoryToken, Group: cfg.DirectoryGroup,
+			HTTP: &http.Client{Timeout: 15 * time.Second}}
+	}
 	receiver := &webhook.Receiver{Secret: cfg.WebhookSecret, Tolerance: cfg.SignatureTolerance, Sink: st,
 		Notify: svc.Wake, Logger: logger}
 	var login *doctorlogin.Client
@@ -99,7 +104,7 @@ func run(logger *slog.Logger) error {
 
 	errc := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "addr", cfg.ListenAddr, "adapter", cfg.AdapterBaseURL.String(), "oidc_issuer", cfg.OIDCIssuer, "staff_oidc_issuer", cfg.StaffOIDCIssuer,
+		logger.Info("listening", "addr", cfg.ListenAddr, "adapter", cfg.AdapterBaseURL.String(), "oidc_issuer", cfg.OIDCIssuer, "staff_oidc_issuer", cfg.StaffOIDCIssuer, "directory", cfg.DirectoryURL != nil,
 			"token_configured", cfg.AdapterToken != "", "cgcom_private_key_jwt", cfg.CGCOMTokenURL != "", "webhook_path", web.WebhookPath)
 		errc <- srv.ListenAndServe()
 	}()

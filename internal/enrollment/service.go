@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
+	"github.com/fikua/fikua-vitalia/internal/directory"
 	"github.com/fikua/fikua-vitalia/internal/store"
 )
 
@@ -30,7 +31,23 @@ type Service struct {
 	// webhook that overtook our own POST response find that response first.
 	AdoptAfter time.Duration
 	Now        func() time.Time
+
+	// Directory, when set, gets every physician HR registers, so they can
+	// sign in through the clinic's identity provider. Optional.
+	Directory Directory
 }
+
+// Directory is the clinic's identity provider as far as enrolment cares.
+type Directory interface {
+	EnsurePhysician(ctx context.Context, p directory.Physician) error
+}
+
+// DirectoryError reports that the enrolment went fine but the physician
+// could not be provisioned in the clinic's identity provider.
+type DirectoryError struct{ Err error }
+
+func (e *DirectoryError) Error() string { return "directory: " + e.Err.Error() }
+func (e *DirectoryError) Unwrap() error { return e.Err }
 
 // DefaultAdoptAfter is the default AdoptAfter.
 const DefaultAdoptAfter = 15 * time.Second
@@ -90,8 +107,25 @@ func (s *Service) Enrol(ctx context.Context, in NewPractitioner) (store.Practiti
 }
 
 // EnrolAgain asks the adapter to enrol an existing practitioner: after a
-// final state, or when the first attempt failed.
+// final state, or when the first attempt failed. It also makes sure the
+// physician exists in the clinic's identity provider; a failure there is a
+// *DirectoryError, returned only when the enrolment itself went fine.
 func (s *Service) EnrolAgain(ctx context.Context, p store.Practitioner) error {
+	var dirErr error
+	if s.Directory != nil {
+		if err := s.Directory.EnsurePhysician(ctx, directory.Physician{CollegiateNumber: p.CollegiateNumber,
+			AdministrativeNumber: p.AdministrativeNumber, FullName: p.FullName, Email: p.Email, Specialty: p.Specialty}); err != nil {
+			s.logger.Warn("directory provisioning failed", "err", err, "practitioner_id", p.ID)
+			dirErr = &DirectoryError{Err: err}
+		}
+	}
+	if err := s.enrol(ctx, p); err != nil {
+		return err
+	}
+	return dirErr
+}
+
+func (s *Service) enrol(ctx context.Context, p store.Practitioner) error {
 	res, err := s.client.CreateEnrollment(ctx, p.AdministrativeNumber, p.CollegiateNumber)
 	if err != nil {
 		return err
