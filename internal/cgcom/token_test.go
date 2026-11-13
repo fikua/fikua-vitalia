@@ -3,6 +3,7 @@ package cgcom_test
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,7 +70,6 @@ type tokenServer struct {
 
 func newTokenServer(t *testing.T, clientID string, key *ecdsa.PrivateKey) *tokenServer {
 	t.Helper()
-	kid, _ := cgcom.KeyThumbprint(&key.PublicKey)
 	ts := &tokenServer{ttl: 300}
 	ts.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ts.mu.Lock()
@@ -93,8 +93,8 @@ func newTokenServer(t *testing.T, clientID string, key *ecdsa.PrivateKey) *token
 			t.Errorf("assertion: %v", err)
 			return
 		}
-		if tok.Headers[0].KeyID != kid {
-			t.Errorf("assertion kid = %q, want the key thumbprint", tok.Headers[0].KeyID)
+		if h := tok.Headers[0].JSONWebKey; h == nil || !h.IsPublic() || !h.Key.(*ecdsa.PublicKey).Equal(&key.PublicKey) {
+			t.Errorf("assertion header jwk = %+v, want the platform public key", h)
 		}
 		var c jwt.Claims
 		if err := tok.Claims(&key.PublicKey, &c); err != nil {
@@ -102,7 +102,7 @@ func newTokenServer(t *testing.T, clientID string, key *ecdsa.PrivateKey) *token
 			return
 		}
 		want := jwt.Expected{Issuer: clientID, Subject: clientID, AnyAudience: jwt.Audience{"http://" + r.Host + "/token"}, Time: c0(tok, key)}
-		if err := c.Validate(want); err != nil || c.ID == "" || c.Expiry.Time().Sub(c.IssuedAt.Time()) > time.Minute {
+		if err := c.Validate(want); err != nil || c.ID == "" || c.Expiry.Time().Sub(c.IssuedAt.Time()) > 2*time.Minute {
 			t.Errorf("assertion claims %+v: %v", c, err)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": fmt.Sprintf("tok-%d", n), "token_type": "Bearer", "expires_in": ttl})
@@ -189,4 +189,95 @@ func c0(tok *jwt.JSONWebToken, key *ecdsa.PrivateKey) time.Time {
 	var c jwt.Claims
 	_ = tok.Claims(&key.PublicKey, &c)
 	return c.IssuedAt.Time()
+}
+
+// syntheticCredential is an SD-JWT shaped like the LEARCredentialMachine,
+// bound (cnf.jwk) to pub. Only the binding matters to the client.
+func syntheticCredential(t *testing.T, pub *ecdsa.PublicKey) string {
+	t.Helper()
+	issuer, _ := cgcom.GenerateKey()
+	signer, _ := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: issuer}, (&jose.SignerOptions{}).WithType("dc+sd-jwt"))
+	raw, _ := cgcom.PublicJWK(pub)
+	var cnf map[string]any
+	_ = json.Unmarshal(raw, &cnf)
+	jws, err := jwt.Signed(signer).Claims(map[string]any{"iss": "VATES-A15456585", "vct": "learcredential.machine.sd.1",
+		"cnf": map[string]any{"jwk": cnf}}).Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return jws + "~WyJzYWx0IiwibWFuZGF0ZWUiLHt9XQ~"
+}
+
+func TestAssertionCarriesThePresentationOfTheCredential(t *testing.T) {
+	key, _ := cgcom.GenerateKey()
+	did, _ := cgcom.DIDKey(&key.PublicKey)
+	cred := syntheticCredential(t, &key.PublicKey)
+
+	var got url.Values
+	var tenant string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		got, tenant = r.PostForm, r.Header.Get("X-Tenant")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"m2m","token_type":"Bearer","expires_in":600}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	src, err := cgcom.NewPrivateKeyJWTSource(cgcom.TokenConfig{TokenURL: srv.URL + "/oidc/token", Key: key, Credential: cred,
+		Audience: "https://verifier.example.test", Tenant: "cgcom"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok, err := src.Token(context.Background()); err != nil || tok != "m2m" {
+		t.Fatalf("token = %q, %v", tok, err)
+	}
+	if tenant != "cgcom" || got.Get("client_id") != did || got.Get("scope") != "" {
+		t.Fatalf("request: tenant %q, form %v", tenant, got)
+	}
+
+	// The assertion: iss = sub = did:key, aud = the Verifier, vp_token = base64(VP-JWT).
+	assertion, _ := jwt.ParseSigned(got.Get("client_assertion"), []jose.SignatureAlgorithm{jose.ES256})
+	var claims struct {
+		jwt.Claims
+		VPToken string `json:"vp_token"`
+	}
+	if err := assertion.Claims(&key.PublicKey, &claims); err != nil {
+		t.Fatal(err)
+	}
+	if claims.Issuer != did || claims.Subject != did || !claims.Audience.Contains("https://verifier.example.test") ||
+		claims.Expiry.Time().Sub(claims.IssuedAt.Time()) != 120*time.Second {
+		t.Fatalf("assertion claims = %+v", claims.Claims)
+	}
+	vpRaw, err := base64.StdEncoding.DecodeString(claims.VPToken)
+	if err != nil {
+		t.Fatalf("vp_token is not standard base64: %v", err)
+	}
+	vp, err := jwt.ParseSigned(string(vpRaw), []jose.SignatureAlgorithm{jose.ES256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vpc struct {
+		jwt.Claims
+		VP struct {
+			Context []string `json:"@context"`
+			Type    []string `json:"type"`
+			VCs     []string `json:"verifiableCredential"`
+		} `json:"vp"`
+	}
+	if err := vp.Claims(&key.PublicKey, &vpc); err != nil {
+		t.Fatal(err)
+	}
+	if vpc.Issuer != did || len(vpc.VP.VCs) != 1 || vpc.VP.VCs[0] != cred || vpc.VP.Type[0] != "VerifiablePresentation" ||
+		vp.Headers[0].JSONWebKey == nil {
+		t.Fatalf("vp = %+v", vpc)
+	}
+
+	// A credential bound to another key, or a client id that is not the key's: refused at start.
+	other, _ := cgcom.GenerateKey()
+	if _, err := cgcom.NewPrivateKeyJWTSource(cgcom.TokenConfig{TokenURL: srv.URL, Key: key, Credential: syntheticCredential(t, &other.PublicKey)}); err == nil {
+		t.Fatal("credential of another key accepted")
+	}
+	if _, err := cgcom.NewPrivateKeyJWTSource(cgcom.TokenConfig{TokenURL: srv.URL, Key: key, Credential: cred, ClientID: "did:key:zOther"}); err == nil {
+		t.Fatal("foreign client id accepted")
+	}
 }

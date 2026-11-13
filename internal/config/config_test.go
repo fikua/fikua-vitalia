@@ -80,17 +80,17 @@ func TestLoadCGCOMPlatformCredential(t *testing.T) {
 		"VITALIA_CGCOM_TOKEN_URL":  "https://cgcom.dev.example.test/token",
 	}
 	_, err := Load(envOf(base))
-	if err == nil || !strings.Contains(err.Error(), "VITALIA_CGCOM_CLIENT_ID") || !strings.Contains(err.Error(), "VITALIA_CGCOM_SIGNING_KEY") {
+	if err == nil || !strings.Contains(err.Error(), "VITALIA_CGCOM_CREDENTIAL") || !strings.Contains(err.Error(), "VITALIA_CGCOM_SIGNING_KEY") {
 		t.Fatalf("token URL without credential: %v", err)
 	}
-	base["VITALIA_CGCOM_CLIENT_ID"] = "vitalia"
+	base["VITALIA_CGCOM_CREDENTIAL"] = "header.payload.signature~"
 	base["VITALIA_CGCOM_SIGNING_KEY"] = "bad"
 	if _, err := Load(envOf(base)); err == nil || strings.Contains(err.Error(), "bad") {
 		t.Fatalf("bad key: %v (and the error must not echo it)", err)
 	}
 	base["VITALIA_CGCOM_SIGNING_KEY"] = enc
 	c, err := Load(envOf(base))
-	if err != nil || c.CGCOMSigningKey == nil || !c.CGCOMSigningKey.Equal(key) || c.CGCOMClientID != "vitalia" {
+	if err != nil || c.CGCOMSigningKey == nil || !c.CGCOMSigningKey.Equal(key) || c.CGCOMClientID != "" || c.CGCOMTenant != "cgcom" {
 		t.Fatalf("config = %+v, %v", c, err)
 	}
 }

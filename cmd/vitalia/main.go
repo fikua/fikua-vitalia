@@ -47,8 +47,9 @@ func run(logger *slog.Logger) error {
 	var tokens cgcom.TokenSource = cgcom.StaticTokenSource(cfg.AdapterToken)
 	if cfg.CGCOMTokenURL != "" {
 		tokens, err = cgcom.NewPrivateKeyJWTSource(cgcom.TokenConfig{
-			TokenURL: cfg.CGCOMTokenURL, ClientID: cfg.CGCOMClientID, Key: cfg.CGCOMSigningKey,
-			Audience: cfg.CGCOMTokenAudience, Scope: cfg.CGCOMTokenScope, HTTP: &http.Client{Timeout: cfg.AdapterTimeout},
+			TokenURL: cfg.CGCOMTokenURL, Key: cfg.CGCOMSigningKey, Credential: cfg.CGCOMCredential, ClientID: cfg.CGCOMClientID,
+			Audience: cfg.CGCOMTokenAudience, Tenant: cfg.CGCOMTenant, Scope: cfg.CGCOMTokenScope,
+			HTTP: &http.Client{Timeout: cfg.AdapterTimeout},
 		})
 		if err != nil {
 			return err

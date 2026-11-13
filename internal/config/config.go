@@ -29,9 +29,11 @@ type Config struct {
 	// CGCOM platform credential: when CGCOMTokenURL is set, the API token
 	// is obtained by private_key_jwt instead of AdapterToken.
 	CGCOMTokenURL      string
-	CGCOMClientID      string
 	CGCOMSigningKey    *ecdsa.PrivateKey
+	CGCOMCredential    string // the platform credential (LEARCredentialMachine)
+	CGCOMClientID      string // the key's did:key when empty
 	CGCOMTokenAudience string // assertion audience; the token URL when empty
+	CGCOMTenant        string // X-Tenant of the token request
 	CGCOMTokenScope    string
 
 	// Webhook receiver.
@@ -148,8 +150,10 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, errors.New("VITALIA_CGCOM_TOKEN_URL must be an absolute http(s) URL"))
 		}
 		c.CGCOMTokenURL = raw
-		c.CGCOMClientID = required("VITALIA_CGCOM_CLIENT_ID")
+		c.CGCOMCredential = required("VITALIA_CGCOM_CREDENTIAL")
+		c.CGCOMClientID = strings.TrimSpace(getenv("VITALIA_CGCOM_CLIENT_ID"))
 		c.CGCOMTokenAudience = strings.TrimSpace(getenv("VITALIA_CGCOM_TOKEN_AUDIENCE"))
+		c.CGCOMTenant = get("VITALIA_CGCOM_TENANT", "cgcom")
 		c.CGCOMTokenScope = strings.TrimSpace(getenv("VITALIA_CGCOM_TOKEN_SCOPE"))
 		if raw := required("VITALIA_CGCOM_SIGNING_KEY"); raw != "" {
 			key, err := cgcom.ParsePrivateKey(raw)

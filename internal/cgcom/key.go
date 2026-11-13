@@ -4,7 +4,6 @@ package cgcom
 // the private key; CGCOM registers the public one as a JWK.
 
 import (
-	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -14,8 +13,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"strings"
-
-	"github.com/go-jose/go-jose/v4"
 )
 
 // GenerateKey creates a new P-256 key pair.
@@ -50,16 +47,6 @@ func PublicJWK(k *ecdsa.PublicKey) ([]byte, error) {
 		X   string `json:"x"`
 		Y   string `json:"y"`
 	}{"EC", "P-256", enc(raw[1:33]), enc(raw[33:65])})
-}
-
-// KeyThumbprint is the RFC 7638 thumbprint of the public key, used as the
-// kid of the client assertions.
-func KeyThumbprint(k *ecdsa.PublicKey) (string, error) {
-	t, err := (&jose.JSONWebKey{Key: k}).Thumbprint(crypto.SHA256)
-	if err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(t), nil
 }
 
 // ParsePrivateKey reads a P-256 private key in base64 PKCS#8 DER (or PEM).
