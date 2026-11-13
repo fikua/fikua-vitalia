@@ -63,3 +63,12 @@ Elegidos de la lista de colegiados de prueba de CGCOM para cubrir casos distinto
 | 303088888 | Andrei Popescu | X1234567L (NIE) | NIE, sin segundo apellido |
 | 353510101 | Emma Schneider | PAA123456 (pasaporte) | Pasaporte |
 | 181840404 | Antonio Moreno Jiménez | 22334455Y (DNI) | Baja colegial: el registro lo rechaza (`REJECTED_BY_REGISTRY`) |
+
+### Enrolamiento simulado: Laia Puig Soler (280000101)
+
+Su DoctorID (sintético, CGCOM DEV) se emitió antes de integrar el enrolamiento, sin documento, así que ningún enrolamiento con CGCOM lo respalda. Para probar el acceso completo, el 13-11-2026 se imitó un enrolamiento que salió bien:
+
+- En Vitalia: la ficha (documento `SINDOCUMENTO`) y un enrolamiento `COMPLETED` (`a7c0e5d2-6b1f-4c3e-9d4a-28000010100a`), que lleva en su cuerpo la marca `simulated`. Se insertaron directamente en la base de datos, después de hacer una copia de seguridad.
+- En Authentik: el usuario `280000101` en el grupo `Vitalia Médicos` (`provisioned_by: simulado`).
+
+En esa ficha no hay que pulsar «Consultar estado»: CGCOM no conoce ese enrolamiento y respondería 404.
