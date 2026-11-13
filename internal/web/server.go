@@ -184,6 +184,10 @@ func staticCache(next http.Handler) http.Handler {
 		} else {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
+		// The clinic's sign-in pages (Authentik, another origin) use its font.
+		if strings.HasPrefix(r.URL.Path, "/static/fonts/") {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

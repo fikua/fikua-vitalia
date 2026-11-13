@@ -281,3 +281,51 @@ entries:
     attrs:
       sources: [!KeyOf source-doctorid]
       show_source_labels: true
+
+  # ------------------------------------------------ look and feel
+  # Authentik's pages look like the clinic's: its logo, colours and font
+  # (served by Vitalia; the font with CORS), light theme. The logo has the
+  # clinic's name, so the flow titles say what the page is for.
+  - model: authentik_flows.flow
+    identifiers: {slug: default-authentication-flow}
+    attrs:
+      title: Acceso a la clínica
+  - model: authentik_brands.brand
+    identifiers: {domain: authentik-default}
+    attrs:
+      branding_title: Clínica Vitalia
+      branding_logo: !Format ["%s/static/logo-vitalia.svg", !Env VITALIA_URL]
+      branding_favicon: !Format ["%s/static/favicon.svg", !Env VITALIA_URL]
+      branding_default_flow_background: !Format ["%s/static/auth-background.svg", !Env VITALIA_URL]
+      attributes:
+        settings:
+          theme:
+            base: light
+      branding_custom_css: !Format
+        - |
+          @font-face {
+            font-family: "Figtree"; font-style: normal; font-weight: 400 800; font-display: swap;
+            src: url("%s/static/fonts/figtree-latin.woff2") format("woff2");
+          }
+          :root, :host {
+            --pf-global--FontFamily--sans-serif: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+            --pf-global--FontFamily--heading--sans-serif: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+            --pf-global--FontFamily--redhat-updated--sans-serif: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+            --pf-global--FontFamily--redhat-updated--heading--sans-serif: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+            --pf-global--primary-color--100: #0b5fae;
+            --pf-global--primary-color--200: #094f91;
+            --pf-global--primary-color--dark-100: #094f91;
+            --pf-global--link--Color: #0b5fae;
+            --pf-global--link--Color--hover: #094f91;
+            --pf-global--Color--100: #13233a;
+            --pf-global--BorderRadius--sm: 10px;
+            --pf-global--BorderRadius--lg: 14px;
+          }
+          @media (min-width: 768px) {
+            ak-flow-executor::part(main) {
+              border-radius: 18px;
+              overflow: hidden;
+              box-shadow: 0 2px 4px rgb(16 35 64 / .08), 0 18px 48px rgb(6 20 42 / .35);
+            }
+          }
+        - !Env VITALIA_URL

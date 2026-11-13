@@ -168,4 +168,18 @@ func TestStaticAssetsAreVersioned(t *testing.T) {
 	if cc := resp.Header.Get("Cache-Control"); cc != "no-cache" {
 		t.Fatalf("unversioned asset Cache-Control = %q", cc)
 	}
+	if resp.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Fatal("only the fonts are shared with other origins")
+	}
+	// The clinic's Authentik pages load the font and the logo from here.
+	for path, cors := range map[string]bool{"/static/fonts/figtree-latin.woff2": true, "/static/logo-vitalia.svg": false} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || (resp.Header.Get("Access-Control-Allow-Origin") == "*") != cors {
+			t.Fatalf("%s: %d, CORS %q", path, resp.StatusCode, resp.Header.Get("Access-Control-Allow-Origin"))
+		}
+	}
 }
