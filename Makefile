@@ -54,6 +54,7 @@ authentik-env:
 	     -e "s|^AUTHENTIK_SECRET_KEY=.*|AUTHENTIK_SECRET_KEY=$$(openssl rand -hex 48)|" \
 	     -e "s|^AUTHENTIK_BOOTSTRAP_PASSWORD=.*|AUTHENTIK_BOOTSTRAP_PASSWORD=$$(openssl rand -hex 12)|" \
 	     -e "s|^VITALIA_CLIENT_SECRET=.*|VITALIA_CLIENT_SECRET=$$(openssl rand -hex 32)|" \
+	     -e "s|^VITALIA_PRO_CLIENT_SECRET=.*|VITALIA_PRO_CLIENT_SECRET=$$(openssl rand -hex 32)|" \
 	     -e "s|^VITALIA_HR_PASSWORD=.*|VITALIA_HR_PASSWORD=$$(openssl rand -hex 8)|" \
 	     -e "s|^ENROLMENT_SCIM_TOKEN=.*|ENROLMENT_SCIM_TOKEN=$$(openssl rand -hex 32)|" \
 	     -e "s|^DOCTORID_CLIENT_SECRET=.*|DOCTORID_CLIENT_SECRET=$$(openssl rand -hex 32)|" \
@@ -79,6 +80,7 @@ demo-authentik: build
 		| openssl pkcs8 -topk8 -nocrypt -outform DER | base64 > data/demo-idp-key.b64
 	@set -a; . ./$(AK_ENV); set +a; \
 	AK_ISSUER=http://localhost:$${COMPOSE_PORT_HTTP:-9000}/application/o/vitalia/; \
+	AK_PRO_ISSUER=http://localhost:$${COMPOSE_PORT_HTTP:-9000}/application/o/vitalia-profesional/; \
 	trap 'kill 0' INT TERM EXIT; \
 	VITALIA_WEBHOOK_SECRET=$(DEMO_SECRET) FAKE_TOKEN=$(DEMO_TOKEN) FAKE_SCIM_TOKEN="$$ENROLMENT_SCIM_TOKEN" \
 	FAKE_IDP_ISSUER=http://localhost:8091 FAKE_IDP_SIGNING_KEY="$$(cat data/demo-idp-key.b64)" \
@@ -87,7 +89,7 @@ demo-authentik: build
 	./bin/fakeadapter & \
 	VITALIA_WEBHOOK_SECRET=$(DEMO_SECRET) VITALIA_ADAPTER_TOKEN=$(DEMO_TOKEN) \
 	VITALIA_ADAPTER_BASE_URL=http://localhost:8090 VITALIA_DB_PATH=data/vitalia-authentik.db \
-	VITALIA_OIDC_ISSUER=$$AK_ISSUER VITALIA_OIDC_CLIENT_ID="$$VITALIA_CLIENT_ID" VITALIA_OIDC_CLIENT_SECRET="$$VITALIA_CLIENT_SECRET" \
+	VITALIA_OIDC_ISSUER=$$AK_PRO_ISSUER VITALIA_OIDC_CLIENT_ID="$$VITALIA_PRO_CLIENT_ID" VITALIA_OIDC_CLIENT_SECRET="$$VITALIA_PRO_CLIENT_SECRET" \
 	VITALIA_STAFF_OIDC_ISSUER=$$AK_ISSUER VITALIA_STAFF_OIDC_CLIENT_ID="$$VITALIA_CLIENT_ID" VITALIA_STAFF_OIDC_CLIENT_SECRET="$$VITALIA_CLIENT_SECRET" \
 	VITALIA_UI_USER=rrhh VITALIA_UI_PASSWORD=pruebas VITALIA_COOKIE_SECURE=false ./bin/vitalia & \
 	wait
