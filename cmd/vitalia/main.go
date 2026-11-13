@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/config"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
@@ -44,8 +44,17 @@ func run(logger *slog.Logger) error {
 	}
 	defer st.Close()
 
-	client := adapter.NewClient(cfg.AdapterBaseURL, &http.Client{Timeout: cfg.AdapterTimeout},
-		adapter.StaticTokenSource(cfg.AdapterToken), st)
+	var tokens cgcom.TokenSource = cgcom.StaticTokenSource(cfg.AdapterToken)
+	if cfg.CGCOMTokenURL != "" {
+		tokens, err = cgcom.NewPrivateKeyJWTSource(cgcom.TokenConfig{
+			TokenURL: cfg.CGCOMTokenURL, ClientID: cfg.CGCOMClientID, Key: cfg.CGCOMSigningKey,
+			Audience: cfg.CGCOMTokenAudience, Scope: cfg.CGCOMTokenScope, HTTP: &http.Client{Timeout: cfg.AdapterTimeout},
+		})
+		if err != nil {
+			return err
+		}
+	}
+	client := cgcom.NewClient(cfg.AdapterBaseURL, &http.Client{Timeout: cfg.AdapterTimeout}, tokens, st)
 	svc := enrollment.New(st, client, logger, cfg.RefreshOnWebhook)
 	receiver := &webhook.Receiver{Secret: cfg.WebhookSecret, Tolerance: cfg.SignatureTolerance, Sink: st,
 		Notify: svc.Wake, Logger: logger}
@@ -90,7 +99,7 @@ func run(logger *slog.Logger) error {
 	errc := make(chan error, 1)
 	go func() {
 		logger.Info("listening", "addr", cfg.ListenAddr, "adapter", cfg.AdapterBaseURL.String(), "oidc_issuer", cfg.OIDCIssuer, "staff_oidc_issuer", cfg.StaffOIDCIssuer,
-			"token_configured", cfg.AdapterToken != "", "webhook_path", web.WebhookPath)
+			"token_configured", cfg.AdapterToken != "", "cgcom_private_key_jwt", cfg.CGCOMTokenURL != "", "webhook_path", web.WebhookPath)
 		errc <- srv.ListenAndServe()
 	}()
 

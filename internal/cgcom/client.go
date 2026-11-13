@@ -1,4 +1,4 @@
-package adapter
+package cgcom
 
 import (
 	"bytes"
@@ -134,6 +134,13 @@ func (c *Client) do(ctx context.Context, op, method, path, enrollmentID string, 
 	call := Call{At: c.now().UTC(), Operation: op, Method: method, Path: path, RequestBody: string(body), EnrollmentID: enrollmentID}
 	start := time.Now()
 	res, err := c.send(ctx, method, path, body, &call, okStatus)
+	// A refused token (expired early, revoked, key rotated): drop it and try
+	// once more with a new one.
+	var pe *ProblemError
+	if inv, ok := c.tokens.(interface{ Invalidate() }); ok && errors.As(err, &pe) && pe.Status == http.StatusUnauthorized {
+		inv.Invalidate()
+		res, err = c.send(ctx, method, path, body, &call, okStatus)
+	}
 	call.Duration = time.Since(start)
 	if err != nil {
 		call.Error = err.Error()

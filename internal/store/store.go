@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 
 	_ "modernc.org/sqlite"
 )
@@ -184,7 +184,7 @@ func (s *Store) ListPractitioners(ctx context.Context) ([]PractitionerRow, error
 		r.CreatedAt = parseTS(created)
 		if eid.Valid {
 			e := Enrollment{
-				ID: eid.String, PractitionerID: r.ID, State: adapter.State(state.String), Body: body.String,
+				ID: eid.String, PractitionerID: r.ID, State: cgcom.State(state.String), Body: body.String,
 				AdapterUpdatedAt: upd.String, InvalidatedReason: invR.String, InvalidatedProcedureID: invP.String,
 				InvalidatedAt: parseTS(invAt.String), CreatedAt: parseTS(eCreated.String), SyncedAt: parseTS(synced.String),
 			}
@@ -201,7 +201,7 @@ func (s *Store) ListPractitioners(ctx context.Context) ([]PractitionerRow, error
 type Enrollment struct {
 	ID                     string
 	PractitionerID         int64
-	State                  adapter.State
+	State                  cgcom.State
 	Body                   string
 	AdapterUpdatedAt       string
 	InvalidatedReason      string
@@ -212,8 +212,8 @@ type Enrollment struct {
 }
 
 // Decoded parses the stored body.
-func (e Enrollment) Decoded() adapter.Enrollment {
-	d, _ := adapter.DecodeEnrollment([]byte(e.Body))
+func (e Enrollment) Decoded() cgcom.Enrollment {
+	d, _ := cgcom.DecodeEnrollment([]byte(e.Body))
 	return d
 }
 
@@ -227,7 +227,7 @@ const (
 // response to our own call, or a GET) it always wins. Otherwise (a webhook)
 // it is only applied when its updated_at is not older than the stored one,
 // so a late or out-of-order webhook does not move the state backwards.
-func (s *Store) UpsertEnrollment(ctx context.Context, practitionerID int64, e adapter.Enrollment, raw []byte, authoritative bool) (string, error) {
+func (s *Store) UpsertEnrollment(ctx context.Context, practitionerID int64, e cgcom.Enrollment, raw []byte, authoritative bool) (string, error) {
 	now := ts(s.now())
 	upd := ""
 	if e.UpdatedAt != nil {
@@ -323,7 +323,7 @@ func scanEnrollments(rows *sql.Rows) ([]Enrollment, error) {
 			&e.InvalidatedProcedureID, &invAt, &created, &synced); err != nil {
 			return nil, fmt.Errorf("scan enrollment: %w", err)
 		}
-		e.State = adapter.State(state)
+		e.State = cgcom.State(state)
 		e.InvalidatedAt, e.CreatedAt, e.SyncedAt = parseTS(invAt), parseTS(created), parseTS(synced)
 		out = append(out, e)
 	}
@@ -427,8 +427,8 @@ func (s *Store) queryWebhooks(ctx context.Context, where string, args ...any) ([
 
 // ----------------------------------------------------------------- adapter calls
 
-// RecordCall stores a call to the adapter (adapter.CallRecorder).
-func (s *Store) RecordCall(ctx context.Context, c adapter.Call) error {
+// RecordCall stores a call to the adapter (cgcom.CallRecorder).
+func (s *Store) RecordCall(ctx context.Context, c cgcom.Call) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO adapter_calls (at, operation, method, path, request_body, status, problem_type, response_body,
 			retry_after, duration_ms, error, enrollment_id)
@@ -439,25 +439,25 @@ func (s *Store) RecordCall(ctx context.Context, c adapter.Call) error {
 }
 
 // CallsOf returns the calls about one enrolment, newest first.
-func (s *Store) CallsOf(ctx context.Context, enrollmentID string) ([]adapter.Call, error) {
+func (s *Store) CallsOf(ctx context.Context, enrollmentID string) ([]cgcom.Call, error) {
 	return s.queryCalls(ctx, ` WHERE enrollment_id = ? ORDER BY id DESC`, enrollmentID)
 }
 
 // RecentCalls returns the latest calls.
-func (s *Store) RecentCalls(ctx context.Context, limit int) ([]adapter.Call, error) {
+func (s *Store) RecentCalls(ctx context.Context, limit int) ([]cgcom.Call, error) {
 	return s.queryCalls(ctx, ` ORDER BY id DESC LIMIT ?`, limit)
 }
 
-func (s *Store) queryCalls(ctx context.Context, where string, args ...any) ([]adapter.Call, error) {
+func (s *Store) queryCalls(ctx context.Context, where string, args ...any) ([]cgcom.Call, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT at, operation, method, path, request_body, status, problem_type,
 		response_body, retry_after, duration_ms, error, enrollment_id FROM adapter_calls`+where, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query calls: %w", err)
 	}
 	defer rows.Close()
-	var out []adapter.Call
+	var out []cgcom.Call
 	for rows.Next() {
-		var c adapter.Call
+		var c cgcom.Call
 		var at string
 		var ms int64
 		if err := rows.Scan(&at, &c.Operation, &c.Method, &c.Path, &c.RequestBody, &c.Status, &c.ProblemType,

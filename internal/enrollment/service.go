@@ -12,14 +12,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/store"
 )
 
 // Service orchestrates the store and the adapter client.
 type Service struct {
 	store            *store.Store
-	client           *adapter.Client
+	client           *cgcom.Client
 	logger           *slog.Logger
 	refreshOnWebhook bool
 	wake             chan struct{}
@@ -36,7 +36,7 @@ type Service struct {
 const DefaultAdoptAfter = 15 * time.Second
 
 // New builds the service.
-func New(st *store.Store, client *adapter.Client, logger *slog.Logger, refreshOnWebhook bool) *Service {
+func New(st *store.Store, client *cgcom.Client, logger *slog.Logger, refreshOnWebhook bool) *Service {
 	return &Service{store: st, client: client, logger: logger, refreshOnWebhook: refreshOnWebhook, wake: make(chan struct{}, 1),
 		AdoptAfter: DefaultAdoptAfter, Now: time.Now}
 }
@@ -60,7 +60,7 @@ type NewPractitioner struct {
 // retry from their page.
 func (s *Service) Enrol(ctx context.Context, in NewPractitioner) (store.Practitioner, error) {
 	in.FullName = strings.TrimSpace(in.FullName)
-	in.AdministrativeNumber = adapter.NormaliseAdministrativeNumber(in.AdministrativeNumber)
+	in.AdministrativeNumber = cgcom.NormaliseAdministrativeNumber(in.AdministrativeNumber)
 	in.CollegiateNumber = strings.TrimSpace(in.CollegiateNumber)
 	in.Specialty = strings.TrimSpace(in.Specialty)
 	in.Email = strings.TrimSpace(in.Email)
@@ -69,10 +69,10 @@ func (s *Service) Enrol(ctx context.Context, in NewPractitioner) (store.Practiti
 	if in.FullName == "" {
 		fields["full_name"] = "Indica el nombre y apellidos."
 	}
-	if !adapter.ValidAdministrativeNumber(in.AdministrativeNumber) {
+	if !cgcom.ValidAdministrativeNumber(in.AdministrativeNumber) {
 		fields["administrative_number"] = "DNI, NIE o pasaporte: letras y números, hasta 20."
 	}
-	if !adapter.ValidCollegiateNumber(in.CollegiateNumber) {
+	if !cgcom.ValidCollegiateNumber(in.CollegiateNumber) {
 		fields["collegiate_number"] = "El número de colegiado tiene 9 dígitos."
 	}
 	if len(fields) > 0 {
@@ -116,7 +116,7 @@ func (s *Service) Refresh(ctx context.Context, id string) error {
 }
 
 // Decide confirms or rejects the physician's DoctorID data.
-func (s *Service) Decide(ctx context.Context, id string, d adapter.Decision) error {
+func (s *Service) Decide(ctx context.Context, id string, d cgcom.Decision) error {
 	res, err := s.client.Decide(ctx, id, d)
 	if err != nil {
 		return err
@@ -184,11 +184,11 @@ func (s *Service) ProcessPending(ctx context.Context) {
 }
 
 func (s *Service) apply(ctx context.Context, rec store.WebhookEvent) (status, detail string, refresh bool) {
-	var ev adapter.Event
+	var ev cgcom.Event
 	if err := json.Unmarshal([]byte(rec.RawBody), &ev); err != nil {
 		return store.WebhookError, "body is not valid JSON: " + err.Error(), false
 	}
-	if ev.Event != adapter.EventStateChanged && ev.Event != adapter.EventDoctorIDInvalidate {
+	if ev.Event != cgcom.EventStateChanged && ev.Event != cgcom.EventDoctorIDInvalidate {
 		return store.WebhookIgnored, fmt.Sprintf("unknown event %q", ev.Event), false
 	}
 
@@ -216,7 +216,7 @@ func (s *Service) apply(ctx context.Context, rec store.WebhookEvent) (status, de
 		return store.WebhookError, err.Error(), false
 	}
 
-	if ev.Event == adapter.EventDoctorIDInvalidate {
+	if ev.Event == cgcom.EventDoctorIDInvalidate {
 		procedure := ""
 		if ev.Enrollment.DoctorID != nil {
 			procedure = ev.Enrollment.DoctorID.ProcedureID
@@ -246,7 +246,7 @@ func (s *Service) apply(ctx context.Context, rec store.WebhookEvent) (status, de
 // provisioned the physician by SCIM) under the physician with its
 // registration number, creating the physician when there is none. It
 // returns a note for the event detail, or "" when the number is ambiguous.
-func (s *Service) adopt(ctx context.Context, e adapter.Enrollment) (string, error) {
+func (s *Service) adopt(ctx context.Context, e cgcom.Enrollment) (string, error) {
 	rows, err := s.store.ListPractitioners(ctx)
 	if err != nil {
 		return "", err
@@ -261,7 +261,7 @@ func (s *Service) adopt(ctx context.Context, e adapter.Enrollment) (string, erro
 	var p store.Practitioner
 	switch len(matches) {
 	case 0:
-		if !adapter.ValidCollegiateNumber(e.CollegiateNumber) {
+		if !cgcom.ValidCollegiateNumber(e.CollegiateNumber) {
 			return "", fmt.Errorf("enrolment without a valid registration number")
 		}
 		// The directory, not the clinic, holds the name and the DNI: use

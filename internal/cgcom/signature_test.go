@@ -1,4 +1,4 @@
-package webhook
+package cgcom
 
 import (
 	"errors"

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 )
 
@@ -24,6 +25,14 @@ type Config struct {
 	AdapterBaseURL *url.URL
 	AdapterToken   string // static bearer token (phase 1); empty sends no Authorization header
 	AdapterTimeout time.Duration
+
+	// CGCOM platform credential: when CGCOMTokenURL is set, the API token
+	// is obtained by private_key_jwt instead of AdapterToken.
+	CGCOMTokenURL      string
+	CGCOMClientID      string
+	CGCOMSigningKey    *ecdsa.PrivateKey
+	CGCOMTokenAudience string // assertion audience; the token URL when empty
+	CGCOMTokenScope    string
 
 	// Webhook receiver.
 	WebhookSecret      []byte
@@ -131,6 +140,23 @@ func Load(getenv func(string) string) (Config, error) {
 				errs = append(errs, fmt.Errorf("VITALIA_OIDC_SIGNING_KEY: %v", err))
 			}
 			c.OIDCSigningKey = key
+		}
+	}
+
+	if raw := strings.TrimSpace(getenv("VITALIA_CGCOM_TOKEN_URL")); raw != "" {
+		if u, err := url.Parse(raw); err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+			errs = append(errs, errors.New("VITALIA_CGCOM_TOKEN_URL must be an absolute http(s) URL"))
+		}
+		c.CGCOMTokenURL = raw
+		c.CGCOMClientID = required("VITALIA_CGCOM_CLIENT_ID")
+		c.CGCOMTokenAudience = strings.TrimSpace(getenv("VITALIA_CGCOM_TOKEN_AUDIENCE"))
+		c.CGCOMTokenScope = strings.TrimSpace(getenv("VITALIA_CGCOM_TOKEN_SCOPE"))
+		if raw := required("VITALIA_CGCOM_SIGNING_KEY"); raw != "" {
+			key, err := cgcom.ParsePrivateKey(raw)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("VITALIA_CGCOM_SIGNING_KEY: %v", err))
+			}
+			c.CGCOMSigningKey = key
 		}
 	}
 

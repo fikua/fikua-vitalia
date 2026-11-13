@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 )
 
 // SCIM schema URNs.
@@ -58,7 +58,7 @@ type scimUser struct {
 type SCIMUser struct {
 	ID, UserName, DisplayName, CollegiateNumber, EnrollmentID string
 	Active                                                    bool
-	State                                                     adapter.State
+	State                                                     cgcom.State
 }
 
 func (s *Stub) scimRoutes(mux *http.ServeMux) {
@@ -316,7 +316,7 @@ func (s *Stub) scimDeleteUser(w http.ResponseWriter, r *http.Request) {
 		scimError(w, http.StatusNotFound, "", "No such user.")
 		return
 	}
-	var events []adapter.Event
+	var events []cgcom.Event
 	if rec := s.recs[u.enrollment]; rec != nil && s.cancelLocked(rec) {
 		events = append(events, s.eventLocked(rec))
 	}
@@ -334,8 +334,8 @@ func (s *Stub) scimDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 // reconcileLocked moves the enrolment of u to match it: an inactive user has
 // no open enrolment; an active one has one for its current identifiers.
-func (s *Stub) reconcileLocked(u, prev *scimUser) ([]adapter.Event, error) {
-	var events []adapter.Event
+func (s *Stub) reconcileLocked(u, prev *scimUser) ([]cgcom.Event, error) {
+	var events []cgcom.Event
 	cur := s.recs[u.enrollment]
 	changed := prev != nil && (prev.admin != u.admin || prev.coll != u.coll)
 	if cur != nil && (!u.active || changed) {
@@ -358,13 +358,13 @@ func (s *Stub) reconcileLocked(u, prev *scimUser) ([]adapter.Event, error) {
 	return events, nil
 }
 
-func (s *Stub) eventLocked(rec *record) adapter.Event {
-	return adapter.Event{EventID: newUUID(), Event: adapter.EventStateChanged, OccurredAt: s.now(), Enrollment: rec.e}
+func (s *Stub) eventLocked(rec *record) cgcom.Event {
+	return cgcom.Event{EventID: newUUID(), Event: cgcom.EventStateChanged, OccurredAt: s.now(), Enrollment: rec.e}
 }
 
 // notify sends the webhooks in the background: the SCIM response must not
 // wait for the organisation's receiver.
-func (s *Stub) notify(events []adapter.Event) {
+func (s *Stub) notify(events []cgcom.Event) {
 	if len(events) == 0 {
 		return
 	}
@@ -432,16 +432,16 @@ func userFrom(in map[string]any) (*scimUser, string) {
 		delete(ext, "enrollmentState")
 		u.coll, _ = ext["collegiateNumber"].(string)
 		admin, _ := ext["administrativeNumber"].(string)
-		u.admin = adapter.NormaliseAdministrativeNumber(admin)
+		u.admin = cgcom.NormaliseAdministrativeNumber(admin)
 	}
 	var problems []string
 	if strings.TrimSpace(u.userName) == "" {
 		problems = append(problems, "userName is required")
 	}
-	if !adapter.ValidCollegiateNumber(u.coll) {
+	if !cgcom.ValidCollegiateNumber(u.coll) {
 		problems = append(problems, SchemaExtension+":collegiateNumber must be 9 digits")
 	}
-	if !adapter.ValidAdministrativeNumber(u.admin) {
+	if !cgcom.ValidAdministrativeNumber(u.admin) {
 		problems = append(problems, SchemaExtension+":administrativeNumber is required (DNI, NIE or passport)")
 	}
 	return u, strings.Join(problems, "; ")

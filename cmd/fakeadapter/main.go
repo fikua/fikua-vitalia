@@ -21,8 +21,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
 	"github.com/fikua/fikua-vitalia/internal/adapterstub"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/idpstub"
 )
@@ -156,16 +156,16 @@ func env(key, def string) string {
 }
 
 var simPage = template.Must(template.New("sim").Funcs(template.FuncMap{
-	"canDo": func(s adapter.State, a string) bool {
+	"canDo": func(s cgcom.State, a string) bool {
 		switch a {
 		case "obtain":
-			return s == adapter.Initiated || s == adapter.PendingAuthSources || s == adapter.Completed
+			return s == cgcom.Initiated || s == cgcom.PendingAuthSources || s == cgcom.Completed
 		case "mismatch", "dispute", "reject-registry":
-			return s == adapter.Initiated || s == adapter.PendingAuthSources
+			return s == cgcom.Initiated || s == cgcom.PendingAuthSources
 		case "expire":
-			return !s.Final() && s != adapter.Completed
+			return !s.Final() && s != cgcom.Completed
 		case "revoke", "renew":
-			return s == adapter.PendingConfirmation || s == adapter.Completed
+			return s == cgcom.PendingConfirmation || s == cgcom.Completed
 		}
 		return false
 	},

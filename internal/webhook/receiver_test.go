@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/store"
 	"github.com/fikua/fikua-vitalia/internal/webhook"
 )
@@ -33,7 +34,7 @@ func newReceiver(t *testing.T) (*webhook.Receiver, *store.Store, *int) {
 func post(h http.Handler, body []byte, header string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/enrollments", bytes.NewReader(body))
 	if header != "" {
-		req.Header.Set(webhook.SignatureHeader, header)
+		req.Header.Set(cgcom.SignatureHeader, header)
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -47,11 +48,11 @@ func TestReceiverStoresSignedEventOnce(t *testing.T) {
 	h, st, notified := newReceiver(t)
 	body := []byte(event)
 
-	first := post(h, body, webhook.Sign(secret, time.Now(), body))
+	first := post(h, body, cgcom.Sign(secret, time.Now(), body))
 	if first.Code != http.StatusOK || !strings.Contains(first.Body.String(), `"duplicate":false`) {
 		t.Fatalf("first delivery: %d %s", first.Code, first.Body)
 	}
-	again := post(h, body, webhook.Sign(secret, time.Now(), body)) // adapter retry, same event_id
+	again := post(h, body, cgcom.Sign(secret, time.Now(), body)) // adapter retry, same event_id
 	if again.Code != http.StatusOK || !strings.Contains(again.Body.String(), `"duplicate":true`) {
 		t.Fatalf("retry: %d %s", again.Code, again.Body)
 	}
@@ -70,8 +71,8 @@ func TestReceiverRejectsBadSignatureWithoutProcessing(t *testing.T) {
 	body := []byte(event)
 	cases := map[string]string{
 		"missing":      "",
-		"wrong secret": webhook.Sign([]byte("not-the-secret-not-the-secret-xx"), time.Now(), body),
-		"too old":      webhook.Sign(secret, time.Now().Add(-10*time.Minute), body),
+		"wrong secret": cgcom.Sign([]byte("not-the-secret-not-the-secret-xx"), time.Now(), body),
+		"too old":      cgcom.Sign(secret, time.Now().Add(-10*time.Minute), body),
 		"malformed":    "v1=abc",
 	}
 	for name, header := range cases {
@@ -96,7 +97,7 @@ func TestReceiverRejectsBadSignatureWithoutProcessing(t *testing.T) {
 func TestReceiverSignedButInvalidEvent(t *testing.T) {
 	h, _, _ := newReceiver(t)
 	body := []byte(`{"event":"enrollment_state_changed"}`)
-	if rec := post(h, body, webhook.Sign(secret, time.Now(), body)); rec.Code != http.StatusBadRequest {
+	if rec := post(h, body, cgcom.Sign(secret, time.Now(), body)); rec.Code != http.StatusBadRequest {
 		t.Fatalf("status %d, want 400", rec.Code)
 	}
 }
@@ -104,7 +105,7 @@ func TestReceiverSignedButInvalidEvent(t *testing.T) {
 func TestReceiverBodyTooLarge(t *testing.T) {
 	h, _, _ := newReceiver(t)
 	body := bytes.Repeat([]byte("a"), 2<<20)
-	if rec := post(h, body, webhook.Sign(secret, time.Now(), body)); rec.Code != http.StatusRequestEntityTooLarge {
+	if rec := post(h, body, cgcom.Sign(secret, time.Now(), body)); rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status %d, want 413", rec.Code)
 	}
 }

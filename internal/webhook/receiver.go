@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
+	"github.com/fikua/fikua-vitalia/internal/store"
 	"io"
 	"log/slog"
 	"net/http"
 	"time"
-
-	"github.com/fikua/fikua-vitalia/internal/adapter"
-	"github.com/fikua/fikua-vitalia/internal/store"
 )
 
 // Sink stores received requests.
@@ -53,7 +52,7 @@ func (h *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify on the raw bytes, before parsing anything.
-	if verr := Verify(r.Header.Get(SignatureHeader), body, h.Secret, received, h.Tolerance); verr != nil {
+	if verr := cgcom.Verify(r.Header.Get(cgcom.SignatureHeader), body, h.Secret, received, h.Tolerance); verr != nil {
 		kept := body
 		if len(kept) > maxRejectedBody {
 			kept = kept[:maxRejectedBody]
@@ -70,8 +69,8 @@ func (h *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var ev adapter.Event
-	if err := json.Unmarshal(body, &ev); err != nil || !adapter.ValidID(ev.EventID) || !adapter.ValidID(ev.Enrollment.ID) {
+	var ev cgcom.Event
+	if err := json.Unmarshal(body, &ev); err != nil || !cgcom.ValidID(ev.EventID) || !cgcom.ValidID(ev.Enrollment.ID) {
 		// Signed by the adapter but not an event we can read: keep it as
 		// evidence and answer 400 so the adapter's retries and alert show it.
 		_, serr := h.Sink.RecordWebhook(r.Context(), store.WebhookEvent{
@@ -111,5 +110,5 @@ func (h *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func writeProblem(w http.ResponseWriter, status int, typ, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(adapter.Problem{Type: typ, Title: http.StatusText(status), Status: status, Detail: detail})
+	_ = json.NewEncoder(w).Encode(cgcom.Problem{Type: typ, Title: http.StatusText(status), Status: status, Detail: detail})
 }

@@ -11,39 +11,39 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/store"
 )
 
-func stateLabel(s adapter.State) string {
+func stateLabel(s cgcom.State) string {
 	switch s {
-	case adapter.Initiated:
+	case cgcom.Initiated:
 		return "Esperando al médico"
-	case adapter.PendingAuthSources:
+	case cgcom.PendingAuthSources:
 		return "Datos colegiales por corregir"
-	case adapter.PendingConfirmation:
+	case cgcom.PendingConfirmation:
 		return "Pendiente de nuestra revisión"
-	case adapter.Completed:
+	case cgcom.Completed:
 		return "Acceso habilitado"
-	case adapter.RejectedByRegistry:
+	case cgcom.RejectedByRegistry:
 		return "Rechazado por el registro colegial"
-	case adapter.Expired:
+	case cgcom.Expired:
 		return "Caducado"
-	case adapter.Cancelled:
+	case cgcom.Cancelled:
 		return "Cancelado"
 	}
 	return string(s)
 }
 
-func stateTone(s adapter.State) string {
+func stateTone(s cgcom.State) string {
 	switch s {
-	case adapter.Completed:
+	case cgcom.Completed:
 		return "ok"
-	case adapter.PendingConfirmation:
+	case cgcom.PendingConfirmation:
 		return "action"
-	case adapter.Initiated:
+	case cgcom.Initiated:
 		return "wait"
-	case adapter.PendingAuthSources:
+	case cgcom.PendingAuthSources:
 		return "warn"
 	}
 	return "off"
@@ -64,9 +64,9 @@ func causeLabel(c *string) string {
 
 func eventLabel(e string) string {
 	switch e {
-	case adapter.EventStateChanged:
+	case cgcom.EventStateChanged:
 		return "Cambio de estado"
-	case adapter.EventDoctorIDInvalidate:
+	case cgcom.EventDoctorIDInvalidate:
 		return "DoctorID invalidado"
 	case "":
 		return "—"
@@ -137,7 +137,7 @@ func dataValue(v any) string {
 
 // compare puts the clinic's record next to the DoctorID data so the operator
 // can decide. The name comparison ignores case, accents and extra spaces.
-func compare(p store.Practitioner, e adapter.Enrollment) []check {
+func compare(p store.Practitioner, e cgcom.Enrollment) []check {
 	if e.DoctorID == nil {
 		return nil
 	}
@@ -202,13 +202,13 @@ func groupOf(e *store.Enrollment) string {
 		return groupIssues
 	}
 	switch e.State {
-	case adapter.PendingConfirmation:
+	case cgcom.PendingConfirmation:
 		return groupReview
-	case adapter.Initiated:
+	case cgcom.Initiated:
 		return groupWaiting
-	case adapter.PendingAuthSources:
+	case cgcom.PendingAuthSources:
 		return groupIssues
-	case adapter.Completed:
+	case cgcom.Completed:
 		return groupVerified
 	}
 	return groupClosed
@@ -237,7 +237,7 @@ type step struct {
 }
 
 // steps maps the enrolment state onto the clinic's four-step journey.
-func steps(s adapter.State) []step {
+func steps(s cgcom.State) []step {
 	st := []step{
 		{Label: "Alta en Vitalia", Hint: "Ficha y enrolamiento enviados", Status: "done"},
 		{Label: "DoctorID del médico", Hint: "Lo obtiene en el Portal de Emisión", Status: "todo"},
@@ -245,17 +245,17 @@ func steps(s adapter.State) []step {
 		{Label: "Acceso habilitado", Hint: "Entra en el Área profesional con DoctorID", Status: "todo"},
 	}
 	switch s {
-	case adapter.Initiated:
+	case cgcom.Initiated:
 		st[1].Status = "current"
-	case adapter.PendingAuthSources:
+	case cgcom.PendingAuthSources:
 		st[1].Status, st[1].Hint = "blocked", "Su colegio debe corregir sus datos"
-	case adapter.RejectedByRegistry:
+	case cgcom.RejectedByRegistry:
 		st[1].Status = "failed"
-	case adapter.PendingConfirmation:
+	case cgcom.PendingConfirmation:
 		st[1].Status, st[2].Status = "done", "current"
-	case adapter.Completed:
+	case cgcom.Completed:
 		st[1].Status, st[2].Status, st[3].Status = "done", "done", "done"
-	case adapter.Expired, adapter.Cancelled:
+	case cgcom.Expired, cgcom.Cancelled:
 		st[1].Status = "failed"
 	}
 	return st
@@ -277,7 +277,7 @@ type labelled struct{ Label, Body string }
 
 // activity merges received webhooks and outgoing calls into one timeline,
 // newest first.
-func activity(hooks []store.WebhookEvent, calls []adapter.Call) []activityItem {
+func activity(hooks []store.WebhookEvent, calls []cgcom.Call) []activityItem {
 	var out []activityItem
 	for _, h := range hooks {
 		sig := "firma válida"

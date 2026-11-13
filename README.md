@@ -51,10 +51,12 @@ A **fictitious clinic** used to test, end to end, how a real healthcare organisa
 ```
 cmd/vitalia          the clinic
 cmd/sendhook         sends a signed test webhook to a running instance
+cmd/cgcomkey         generates the CGCOM platform key; prints the public JWK
 cmd/fakeadapter      stand-ins of the enrolment API (REST and SCIM 2.0) and the identity provider, plus /_sim
 deploy/authentik     Authentik for the clinic: compose file and blueprint
-internal/adapter     enrolment API types and client (TokenSource: static token in phase 1)
-internal/webhook     signature, receiver, sender
+internal/cgcom       CGCOM integration: enrolment API client and types, platform key (ES256 JWK),
+                     API token by private_key_jwt, webhook signature
+internal/webhook     the clinic's webhook receiver (stores signed events)
 internal/enrollment  enrol / refresh / decide / cancel, webhook processor
 internal/doctorlogin OIDC relying party and the access rule
 internal/idpstub     simulated OpenID Provider (tests and demos)

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/store"
@@ -274,7 +274,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 
 type enrollView struct {
 	store.Enrollment
-	E      adapter.Enrollment
+	E      cgcom.Enrollment
 	Checks []check
 }
 
@@ -366,9 +366,9 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request) {
 	case "refrescar":
 		err, ok = s.service.Refresh(ctx, id), "Estado actualizado desde el sistema DoctorID."
 	case "confirmar":
-		err, ok = s.service.Decide(ctx, id, adapter.Confirm), "Datos confirmados. El profesional queda verificado."
+		err, ok = s.service.Decide(ctx, id, cgcom.Confirm), "Datos confirmados. El profesional queda verificado."
 	case "rechazar":
-		err, ok = s.service.Decide(ctx, id, adapter.Reject), "Datos rechazados. La inscripción queda cancelada."
+		err, ok = s.service.Decide(ctx, id, cgcom.Reject), "Datos rechazados. La inscripción queda cancelada."
 	case "cancelar":
 		err, ok = s.service.Cancel(ctx, id), "Inscripción cancelada."
 	default:
@@ -479,7 +479,7 @@ func takeFlash(w http.ResponseWriter, r *http.Request) (flash, bool) {
 // problem type and detail, and when to retry.
 func (s *Server) flashError(w http.ResponseWriter, text string, err error) {
 	f := flash{Kind: "error", Text: text}
-	var pe *adapter.ProblemError
+	var pe *cgcom.ProblemError
 	if errors.As(err, &pe) {
 		f.Detail = fmt.Sprintf("HTTP %d", pe.Status)
 		if pe.Problem.Type != "" {

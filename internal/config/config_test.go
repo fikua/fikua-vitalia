@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 )
 
 func envOf(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
@@ -64,5 +66,31 @@ func TestLoadWithTheClinicIdentityProvider(t *testing.T) {
 	base["VITALIA_UI_USER"] = "only-user"
 	if _, err := Load(envOf(base)); err == nil || !strings.Contains(err.Error(), "go together") {
 		t.Fatalf("user without password: %v", err)
+	}
+}
+
+func TestLoadCGCOMPlatformCredential(t *testing.T) {
+	key, _ := cgcom.GenerateKey()
+	enc, _ := cgcom.EncodePrivateKey(key)
+	base := map[string]string{
+		"VITALIA_ADAPTER_BASE_URL": "https://cgcom.dev.example.test/cgcom-adapter",
+		"VITALIA_WEBHOOK_SECRET":   strings.Repeat("s", 32),
+		"VITALIA_UI_USER":          "u",
+		"VITALIA_UI_PASSWORD":      "p",
+		"VITALIA_CGCOM_TOKEN_URL":  "https://cgcom.dev.example.test/token",
+	}
+	_, err := Load(envOf(base))
+	if err == nil || !strings.Contains(err.Error(), "VITALIA_CGCOM_CLIENT_ID") || !strings.Contains(err.Error(), "VITALIA_CGCOM_SIGNING_KEY") {
+		t.Fatalf("token URL without credential: %v", err)
+	}
+	base["VITALIA_CGCOM_CLIENT_ID"] = "vitalia"
+	base["VITALIA_CGCOM_SIGNING_KEY"] = "bad"
+	if _, err := Load(envOf(base)); err == nil || strings.Contains(err.Error(), "bad") {
+		t.Fatalf("bad key: %v (and the error must not echo it)", err)
+	}
+	base["VITALIA_CGCOM_SIGNING_KEY"] = enc
+	c, err := Load(envOf(base))
+	if err != nil || c.CGCOMSigningKey == nil || !c.CGCOMSigningKey.Equal(key) || c.CGCOMClientID != "vitalia" {
+		t.Fatalf("config = %+v, %v", c, err)
 	}
 }

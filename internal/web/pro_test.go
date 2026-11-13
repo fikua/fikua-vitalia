@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
 	"github.com/fikua/fikua-vitalia/internal/adapterstub"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/idpstub"
@@ -56,7 +56,7 @@ func TestDoctorSignsInWithDoctorID(t *testing.T) {
 	adapterSrv := httptest.NewServer((&adapterstub.Stub{}).Handler())
 	t.Cleanup(adapterSrv.Close)
 	u, _ := url.Parse(adapterSrv.URL)
-	svc := enrollment.New(st, adapter.NewClient(u, &http.Client{}, adapter.StaticTokenSource("t"), st), logger, false)
+	svc := enrollment.New(st, cgcom.NewClient(u, &http.Client{}, cgcom.StaticTokenSource("t"), st), logger, false)
 	ui, err := web.New(web.Config{UIUser: "rrhh", UIPassword: "x"}, st, svc,
 		&webhook.Receiver{Secret: secret, Tolerance: time.Minute, Sink: st, Logger: logger}, login, logger)
 	if err != nil {
@@ -67,7 +67,7 @@ func TestDoctorSignsInWithDoctorID(t *testing.T) {
 	// The physician's record, enrolment completed.
 	p, _ := st.FindOrCreatePractitioner(ctx, store.Practitioner{FullName: "Laia Puig Soler", AdministrativeNumber: "11111111H", CollegiateNumber: "282810001"})
 	now := time.Now()
-	_, _ = st.UpsertEnrollment(ctx, p.ID, adapter.Enrollment{ID: "6a0d7f3c-2b1e-4e8a-9c55-1f0b2d3e4a5b", State: adapter.Completed,
+	_, _ = st.UpsertEnrollment(ctx, p.ID, cgcom.Enrollment{ID: "6a0d7f3c-2b1e-4e8a-9c55-1f0b2d3e4a5b", State: cgcom.Completed,
 		CollegiateNumber: "282810001", UpdatedAt: &now}, []byte(`{}`), true)
 
 	jar, _ := cookiejar.New(nil)

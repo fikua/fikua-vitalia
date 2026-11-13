@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/idpstub"
 	"github.com/fikua/fikua-vitalia/internal/store"
@@ -99,7 +99,7 @@ func (e *env) login(t *testing.T, choice string) (url.Values, string) {
 	return loc.Query(), state
 }
 
-func (e *env) practitioner(t *testing.T, coll string, state adapter.State) store.Practitioner {
+func (e *env) practitioner(t *testing.T, coll string, state cgcom.State) store.Practitioner {
 	t.Helper()
 	ctx := context.Background()
 	p, err := e.st.FindOrCreatePractitioner(ctx, store.Practitioner{FullName: "Laia Puig Soler", AdministrativeNumber: "11111111H", CollegiateNumber: coll})
@@ -107,7 +107,7 @@ func (e *env) practitioner(t *testing.T, coll string, state adapter.State) store
 		t.Fatal(err)
 	}
 	now := time.Now()
-	en := adapter.Enrollment{ID: "6a0d7f3c-2b1e-4e8a-9c55-1f0b2d3e4a5b", State: state, CollegiateNumber: coll, UpdatedAt: &now}
+	en := cgcom.Enrollment{ID: "6a0d7f3c-2b1e-4e8a-9c55-1f0b2d3e4a5b", State: state, CollegiateNumber: coll, UpdatedAt: &now}
 	if _, err := e.st.UpsertEnrollment(ctx, p.ID, en, []byte(`{}`), true); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func (e *env) practitioner(t *testing.T, coll string, state adapter.State) store
 func TestLoginGrantedBindsTheDoctorID(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	p := e.practitioner(t, "282810001", adapter.Completed)
+	p := e.practitioner(t, "282810001", cgcom.Completed)
 
 	q, state := e.login(t, "282810001")
 	if q.Get("iss") != e.idp.URL {
@@ -164,9 +164,9 @@ func TestAccessRule(t *testing.T) {
 		reason string
 	}{
 		{"not a physician of the clinic", func(*env, *testing.T) {}, idpstub.Outsider.CollegiateNumber, doctorlogin.ReasonNotRegistered},
-		{"enrolment not completed", func(e *env, t *testing.T) { e.practitioner(t, "282810001", adapter.PendingConfirmation) }, "282810001", doctorlogin.ReasonNotVerified},
+		{"enrolment not completed", func(e *env, t *testing.T) { e.practitioner(t, "282810001", cgcom.PendingConfirmation) }, "282810001", doctorlogin.ReasonNotVerified},
 		{"DoctorID invalidated", func(e *env, t *testing.T) {
-			p := e.practitioner(t, "282810001", adapter.Completed)
+			p := e.practitioner(t, "282810001", cgcom.Completed)
 			list, _ := e.st.EnrollmentsOf(ctx, p.ID)
 			_ = e.st.MarkInvalidated(ctx, list[0].ID, "revoke", "", time.Now())
 		}, "282810001", doctorlogin.ReasonInvalidated},

@@ -1,6 +1,6 @@
-// Package webhook receives the enrolment notifications the adapter sends to
-// the platform, and verifies their signature.
-package webhook
+package cgcom
+
+// Signature of the enrolment notifications CGCOM sends to the platform.
 
 import (
 	"crypto/hmac"

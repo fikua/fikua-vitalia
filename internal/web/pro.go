@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/store"
 )
@@ -216,7 +216,7 @@ func acrLabel(acr string) string {
 	return acr
 }
 
-func reasonLabel(reason string, state adapter.State) string {
+func reasonLabel(reason string, state cgcom.State) string {
 	switch reason {
 	case doctorlogin.ReasonNotRegistered:
 		return "Tu DoctorID es válido, pero no constas como profesional de Clínica Vitalia. Si trabajas con nosotros, pide a Recursos Humanos que te den de alta."

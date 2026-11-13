@@ -20,9 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/idpstub"
-	"github.com/fikua/fikua-vitalia/internal/webhook"
 )
 
 // Stub is the fake adapter.
@@ -45,7 +44,7 @@ type Stub struct {
 }
 
 type record struct {
-	e     adapter.Enrollment
+	e     cgcom.Enrollment
 	admin string
 }
 
@@ -100,13 +99,13 @@ func (s *Stub) create(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusBadRequest, "invalid_request", "The body is not valid.", nil)
 		return
 	}
-	var v []adapter.Violation
-	admin := adapter.NormaliseAdministrativeNumber(in.AdministrativeNumber)
-	if !adapter.ValidAdministrativeNumber(admin) {
-		v = append(v, adapter.Violation{Field: "administrative_number", Message: "required, at most 20 characters"})
+	var v []cgcom.Violation
+	admin := cgcom.NormaliseAdministrativeNumber(in.AdministrativeNumber)
+	if !cgcom.ValidAdministrativeNumber(admin) {
+		v = append(v, cgcom.Violation{Field: "administrative_number", Message: "required, at most 20 characters"})
 	}
-	if !adapter.ValidCollegiateNumber(in.CollegiateNumber) {
-		v = append(v, adapter.Violation{Field: "collegiate_number", Message: "must be 9 digits"})
+	if !cgcom.ValidCollegiateNumber(in.CollegiateNumber) {
+		v = append(v, cgcom.Violation{Field: "collegiate_number", Message: "must be 9 digits"})
 	}
 	if len(v) > 0 {
 		problem(w, http.StatusBadRequest, "invalid_request", "Missing field or wrong format.", v)
@@ -130,9 +129,9 @@ var errIssuerDown = errors.New("issuer unavailable")
 
 // openLocked returns the open enrolment of the pair or opens a new one.
 // Inputs are already validated. The caller holds s.mu.
-func (s *Stub) openLocked(admin, coll string) (e adapter.Enrollment, created bool, err error) {
+func (s *Stub) openLocked(admin, coll string) (e cgcom.Enrollment, created bool, err error) {
 	if strings.HasPrefix(coll, "999") {
-		return adapter.Enrollment{}, false, errIssuerDown
+		return cgcom.Enrollment{}, false, errIssuerDown
 	}
 	for _, id := range s.ord {
 		rec := s.recs[id]
@@ -142,12 +141,12 @@ func (s *Stub) openLocked(admin, coll string) (e adapter.Enrollment, created boo
 	}
 	now := s.now()
 	exp := now.Add(7 * 24 * time.Hour)
-	e = adapter.Enrollment{ID: newUUID(), CollegiateNumber: coll, ExpiresAt: &exp, UpdatedAt: &now}
+	e = cgcom.Enrollment{ID: newUUID(), CollegiateNumber: coll, ExpiresAt: &exp, UpdatedAt: &now}
 	if strings.HasSuffix(coll, "0") {
-		e.State = adapter.PendingConfirmation
+		e.State = cgcom.PendingConfirmation
 		e.DoctorID = s.doctorID(coll, now)
 	} else {
-		e.State = adapter.Initiated
+		e.State = cgcom.Initiated
 		e.IssuancePortalURL = &s.PortalURL
 	}
 	if s.recs == nil {
@@ -163,7 +162,7 @@ func (s *Stub) cancelLocked(rec *record) bool {
 	if !rec.e.State.CanCancel() {
 		return false
 	}
-	s.move(rec, adapter.Cancelled)
+	s.move(rec, cgcom.Cancelled)
 	rec.e.DoctorID, rec.e.IssuancePortalURL, rec.e.AuthSourcesCause = nil, nil, nil
 	return true
 }
@@ -188,7 +187,7 @@ func (s *Stub) confirm(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil || (in.Decision != "confirm" && in.Decision != "reject") {
 		problem(w, http.StatusBadRequest, "invalid_request", "decision must be confirm or reject.",
-			[]adapter.Violation{{Field: "decision", Message: "confirm or reject"}})
+			[]cgcom.Violation{{Field: "decision", Message: "confirm or reject"}})
 		return
 	}
 	s.mu.Lock()
@@ -198,14 +197,14 @@ func (s *Stub) confirm(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusNotFound, "enrollment_not_found", "No such enrollment.", nil)
 		return
 	}
-	target := adapter.Completed
+	target := cgcom.Completed
 	if in.Decision == "reject" {
-		target = adapter.Cancelled
+		target = cgcom.Cancelled
 	}
 	switch rec.e.State {
-	case adapter.PendingConfirmation:
+	case cgcom.PendingConfirmation:
 		s.move(rec, target)
-		if target == adapter.Cancelled {
+		if target == cgcom.Cancelled {
 			rec.e.DoctorID = nil
 		}
 	case target: // same decision again: idempotent
@@ -226,7 +225,7 @@ func (s *Stub) cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
-	case rec.e.State == adapter.Cancelled:
+	case rec.e.State == cgcom.Cancelled:
 	case s.cancelLocked(rec):
 	default:
 		problem(w, http.StatusConflict, "enrollment_state_conflict",
@@ -236,7 +235,7 @@ func (s *Stub) cancel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rec.e)
 }
 
-func (s *Stub) move(rec *record, to adapter.State) {
+func (s *Stub) move(rec *record, to cgcom.State) {
 	now := s.now()
 	rec.e.State = to
 	rec.e.UpdatedAt = &now
@@ -271,14 +270,14 @@ func (s *Stub) ActWith(ctx context.Context, id, action string, opt ActOptions) (
 		return Sent{}, ErrNoEnrollment
 	}
 	st := rec.e.State
-	event, reason := adapter.EventStateChanged, ""
+	event, reason := cgcom.EventStateChanged, ""
 	switch action {
 	case "obtain": // the physician obtains a (new) DoctorID
-		if st != adapter.Initiated && st != adapter.PendingAuthSources && st != adapter.Completed {
+		if st != cgcom.Initiated && st != cgcom.PendingAuthSources && st != cgcom.Completed {
 			s.mu.Unlock()
 			return Sent{}, ErrNotAllowed
 		}
-		s.move(rec, adapter.PendingConfirmation)
+		s.move(rec, cgcom.PendingConfirmation)
 		rec.e.DoctorID = s.doctorID(rec.e.CollegiateNumber, s.now())
 		if opt.GivenName != "" {
 			rec.e.DoctorID.Data["givenName"] = strings.ToUpper(strings.TrimSpace(opt.GivenName))
@@ -288,7 +287,7 @@ func (s *Stub) ActWith(ctx context.Context, id, action string, opt ActOptions) (
 		}
 		rec.e.IssuancePortalURL, rec.e.AuthSourcesCause = nil, nil
 	case "mismatch", "dispute":
-		if st != adapter.Initiated && st != adapter.PendingAuthSources {
+		if st != cgcom.Initiated && st != cgcom.PendingAuthSources {
 			s.mu.Unlock()
 			return Sent{}, ErrNotAllowed
 		}
@@ -296,41 +295,41 @@ func (s *Stub) ActWith(ctx context.Context, id, action string, opt ActOptions) (
 		if action == "dispute" {
 			cause = "holder_dispute"
 		}
-		s.move(rec, adapter.PendingAuthSources)
+		s.move(rec, cgcom.PendingAuthSources)
 		rec.e.AuthSourcesCause = &cause
 	case "reject-registry":
-		if st != adapter.Initiated && st != adapter.PendingAuthSources {
+		if st != cgcom.Initiated && st != cgcom.PendingAuthSources {
 			s.mu.Unlock()
 			return Sent{}, ErrNotAllowed
 		}
-		s.move(rec, adapter.RejectedByRegistry)
+		s.move(rec, cgcom.RejectedByRegistry)
 		rec.e.IssuancePortalURL, rec.e.AuthSourcesCause = nil, nil
 	case "expire":
-		if st.Final() || st == adapter.Completed {
+		if st.Final() || st == cgcom.Completed {
 			s.mu.Unlock()
 			return Sent{}, ErrNotAllowed
 		}
-		s.move(rec, adapter.Expired)
+		s.move(rec, cgcom.Expired)
 		rec.e.IssuancePortalURL, rec.e.AuthSourcesCause, rec.e.DoctorID = nil, nil, nil
 	case "revoke", "renew":
-		if st != adapter.PendingConfirmation && st != adapter.Completed {
+		if st != cgcom.PendingConfirmation && st != cgcom.Completed {
 			s.mu.Unlock()
 			return Sent{}, ErrNotAllowed
 		}
-		event, reason = adapter.EventDoctorIDInvalidate, action
+		event, reason = cgcom.EventDoctorIDInvalidate, action
 		now := s.now()
 		rec.e.UpdatedAt = &now
 	default:
 		s.mu.Unlock()
 		return Sent{}, fmt.Errorf("unknown action %q", action)
 	}
-	ev := adapter.Event{EventID: newUUID(), Event: event, OccurredAt: s.now(), Reason: reason, Enrollment: rec.e}
+	ev := cgcom.Event{EventID: newUUID(), Event: event, OccurredAt: s.now(), Reason: reason, Enrollment: rec.e}
 	s.mu.Unlock()
 	return s.SendEvent(ctx, ev), nil
 }
 
 // SendEvent signs and posts ev to the platform's webhook.
-func (s *Stub) SendEvent(ctx context.Context, ev adapter.Event) Sent {
+func (s *Stub) SendEvent(ctx context.Context, ev cgcom.Event) Sent {
 	if s.WebhookURL == "" {
 		return Sent{Err: errors.New("no webhook URL configured")}
 	}
@@ -339,15 +338,15 @@ func (s *Stub) SendEvent(ctx context.Context, ev adapter.Event) Sent {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
-	status, resp, err := webhook.Send(ctx, client, s.WebhookURL, s.WebhookSecret, body, time.Now())
+	status, resp, err := cgcom.Send(ctx, client, s.WebhookURL, s.WebhookSecret, body, time.Now())
 	return Sent{Status: status, Body: resp, Err: err}
 }
 
 // Snapshot returns the enrolments, newest first.
-func (s *Stub) Snapshot() []adapter.Enrollment {
+func (s *Stub) Snapshot() []cgcom.Enrollment {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]adapter.Enrollment, 0, len(s.ord))
+	out := make([]cgcom.Enrollment, 0, len(s.ord))
 	for i := len(s.ord) - 1; i >= 0; i-- {
 		out = append(out, s.recs[s.ord[i]].e)
 	}
@@ -362,13 +361,13 @@ var boards = []string{"Colegio Oficial de Médicos de Madrid", "Col·legi Oficia
 var specialities = []string{"Cardiología", "Medicina Familiar y Comunitaria", "Pediatría", "Dermatología", "Traumatología"}
 
 // doctorID builds synthetic DoctorID data, stable for a registration number.
-func (s *Stub) doctorID(coll string, now time.Time) *adapter.DoctorID {
+func (s *Stub) doctorID(coll string, now time.Time) *cgcom.DoctorID {
 	n := 0
 	for _, c := range coll {
 		n += int(c - '0')
 	}
 	until := now.AddDate(5, 0, 0)
-	return &adapter.DoctorID{
+	return &cgcom.DoctorID{
 		ProcedureID: newUUID(),
 		ValidFrom:   &now,
 		ValidUntil:  &until,
@@ -397,10 +396,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func problem(w http.ResponseWriter, status int, typ, detail string, v []adapter.Violation) {
+func problem(w http.ResponseWriter, status int, typ, detail string, v []cgcom.Violation) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(adapter.Problem{
+	_ = json.NewEncoder(w).Encode(cgcom.Problem{
 		Type: typ, Title: http.StatusText(status), Status: status, Detail: detail, Instance: "/", Violations: v,
 	})
 }

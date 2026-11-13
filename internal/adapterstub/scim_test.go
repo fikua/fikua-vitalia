@@ -11,9 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
 	"github.com/fikua/fikua-vitalia/internal/adapterstub"
-	"github.com/fikua/fikua-vitalia/internal/webhook"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 )
 
 const scimToken = "scim-token"
@@ -22,7 +21,7 @@ type scimEnv struct {
 	t      *testing.T
 	api    *httptest.Server
 	mu     sync.Mutex
-	events []adapter.Event
+	events []cgcom.Event
 	got    chan struct{}
 }
 
@@ -32,10 +31,10 @@ func newSCIMEnv(t *testing.T) *scimEnv {
 	e := &scimEnv{t: t, got: make(chan struct{}, 16)}
 	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		if err := webhook.Verify(r.Header.Get(webhook.SignatureHeader), body, secret, time.Now(), 5*time.Minute); err != nil {
+		if err := cgcom.Verify(r.Header.Get(cgcom.SignatureHeader), body, secret, time.Now(), 5*time.Minute); err != nil {
 			t.Errorf("webhook signature: %v", err)
 		}
-		var ev adapter.Event
+		var ev cgcom.Event
 		_ = json.Unmarshal(body, &ev)
 		e.mu.Lock()
 		e.events = append(e.events, ev)
@@ -71,7 +70,7 @@ func (e *scimEnv) do(method, path string, body any) (int, map[string]any) {
 }
 
 // waitEvent returns the next webhook the stub sent.
-func (e *scimEnv) waitEvent() adapter.Event {
+func (e *scimEnv) waitEvent() cgcom.Event {
 	e.t.Helper()
 	select {
 	case <-e.got:
@@ -110,11 +109,11 @@ func TestSCIMProvisioningDrivesEnrolment(t *testing.T) {
 		t.Fatalf("create: %d %v", code, u)
 	}
 	id := u["id"].(string)
-	if ext(u)["enrollmentState"] != string(adapter.Initiated) || ext(u)["administrativeNumber"] != "12345678Z" {
+	if ext(u)["enrollmentState"] != string(cgcom.Initiated) || ext(u)["administrativeNumber"] != "12345678Z" {
 		t.Fatalf("extension: %v", ext(u))
 	}
 	ev := e.waitEvent()
-	if ev.Event != adapter.EventStateChanged || ev.Enrollment.CollegiateNumber != "282810001" || ev.Enrollment.State != adapter.Initiated {
+	if ev.Event != cgcom.EventStateChanged || ev.Enrollment.CollegiateNumber != "282810001" || ev.Enrollment.State != cgcom.Initiated {
 		t.Fatalf("event on create: %+v", ev)
 	}
 	first := ev.Enrollment.ID
@@ -131,16 +130,16 @@ func TestSCIMProvisioningDrivesEnrolment(t *testing.T) {
 	// Deactivate with PATCH: the open enrolment is cancelled.
 	code, u = e.do("PATCH", "/Users/"+id, map[string]any{"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
 		"Operations": []any{map[string]any{"op": "replace", "value": map[string]any{"active": false}}}})
-	if code != http.StatusOK || u["active"] != false || ext(u)["enrollmentState"] != string(adapter.Cancelled) {
+	if code != http.StatusOK || u["active"] != false || ext(u)["enrollmentState"] != string(cgcom.Cancelled) {
 		t.Fatalf("deactivate: %d %v", code, u)
 	}
-	if ev := e.waitEvent(); ev.Enrollment.ID != first || ev.Enrollment.State != adapter.Cancelled {
+	if ev := e.waitEvent(); ev.Enrollment.ID != first || ev.Enrollment.State != cgcom.Cancelled {
 		t.Fatalf("event on deactivate: %+v", ev)
 	}
 
 	// Reactivate with PUT: a new enrolment is opened.
 	code, u = e.do("PUT", "/Users/"+id, physician("lpuig", "282810001"))
-	if code != http.StatusOK || ext(u)["enrollmentId"] == first || ext(u)["enrollmentState"] != string(adapter.Initiated) {
+	if code != http.StatusOK || ext(u)["enrollmentId"] == first || ext(u)["enrollmentState"] != string(cgcom.Initiated) {
 		t.Fatalf("reactivate: %d %v", code, u)
 	}
 	second := e.waitEvent().Enrollment.ID
@@ -149,7 +148,7 @@ func TestSCIMProvisioningDrivesEnrolment(t *testing.T) {
 	if code, _ := e.do("DELETE", "/Users/"+id, nil); code != http.StatusNoContent {
 		t.Fatalf("delete: %d", code)
 	}
-	if ev := e.waitEvent(); ev.Enrollment.ID != second || ev.Enrollment.State != adapter.Cancelled {
+	if ev := e.waitEvent(); ev.Enrollment.ID != second || ev.Enrollment.State != cgcom.Cancelled {
 		t.Fatalf("event on delete: %+v", ev)
 	}
 	if code, _ := e.do("GET", "/Users/"+id, nil); code != http.StatusNotFound {
@@ -171,7 +170,7 @@ func TestSCIMRejectsMissingIdentifiersAndBadToken(t *testing.T) {
 
 	// Already has a DoctorID: straight to PENDING_CONFIRMATION.
 	code, res = e.do("POST", "/Users", physician("mgarcia", "282810010"))
-	if code != http.StatusCreated || ext(res)["enrollmentState"] != string(adapter.PendingConfirmation) {
+	if code != http.StatusCreated || ext(res)["enrollmentState"] != string(cgcom.PendingConfirmation) {
 		t.Fatalf("existing DoctorID: %d %v", code, res)
 	}
 

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
 	"github.com/fikua/fikua-vitalia/internal/adapterstub"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/store"
 	"github.com/fikua/fikua-vitalia/internal/web"
@@ -34,7 +34,7 @@ func newServer(t *testing.T) *httptest.Server {
 	adapterSrv := httptest.NewServer(stub.Handler())
 	t.Cleanup(adapterSrv.Close)
 	u, _ := url.Parse(adapterSrv.URL)
-	client := adapter.NewClient(u, &http.Client{Timeout: 5 * time.Second}, adapter.StaticTokenSource("tok"), st)
+	client := cgcom.NewClient(u, &http.Client{Timeout: 5 * time.Second}, cgcom.StaticTokenSource("tok"), st)
 	svc := enrollment.New(st, client, logger, false)
 	receiver := &webhook.Receiver{Secret: secret, Tolerance: 5 * time.Minute, Sink: st, Logger: logger}
 	ui, err := web.New(web.Config{UIUser: "admision", UIPassword: "pass-de-pruebas"}, st, svc, receiver, nil, logger)
@@ -129,11 +129,11 @@ func TestLoginEnrolAndCrossOriginPost(t *testing.T) {
 func TestWebhookAndHealthNeedNoSession(t *testing.T) {
 	srv := newServer(t)
 	body := []byte(`{"event_id":"11111111-1111-4111-8111-111111111111","event":"enrollment_state_changed","enrollment":{"id":"22222222-2222-4222-8222-222222222222","state":"EXPIRED","collegiate_number":"282812345"}}`)
-	status, _, err := webhook.Send(context.Background(), &http.Client{}, srv.URL+web.WebhookPath, secret, body, time.Now())
+	status, _, err := cgcom.Send(context.Background(), &http.Client{}, srv.URL+web.WebhookPath, secret, body, time.Now())
 	if err != nil || status != http.StatusOK {
 		t.Fatalf("signed webhook: %d %v", status, err)
 	}
-	status, _, _ = webhook.Send(context.Background(), &http.Client{}, srv.URL+web.WebhookPath, []byte("wrong-secret-wrong-secret-wrong-s"), body, time.Now())
+	status, _, _ = cgcom.Send(context.Background(), &http.Client{}, srv.URL+web.WebhookPath, []byte("wrong-secret-wrong-secret-wrong-s"), body, time.Now())
 	if status != http.StatusUnauthorized {
 		t.Fatalf("badly signed webhook: %d", status)
 	}

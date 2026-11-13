@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
 	"github.com/fikua/fikua-vitalia/internal/adapterstub"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/store"
 	"github.com/fikua/fikua-vitalia/internal/webhook"
@@ -43,7 +43,7 @@ func newEnv(t *testing.T, refreshOnWebhook bool) *env {
 	t.Cleanup(adapterSrv.Close)
 	u, _ := url.Parse(adapterSrv.URL)
 
-	client := adapter.NewClient(u, &http.Client{Timeout: 5 * time.Second}, adapter.StaticTokenSource("tok"), st)
+	client := cgcom.NewClient(u, &http.Client{Timeout: 5 * time.Second}, cgcom.StaticTokenSource("tok"), st)
 	svc := enrollment.New(st, client, logger, refreshOnWebhook)
 	receiver := &webhook.Receiver{Secret: secret, Tolerance: 5 * time.Minute, Sink: st, Logger: logger}
 	platformSrv := httptest.NewServer(receiver)
@@ -92,24 +92,24 @@ func TestFullFlowWithoutDoctorID(t *testing.T) {
 	if p.AdministrativeNumber != "12345678Z" {
 		t.Fatalf("administrative number not normalised: %q", p.AdministrativeNumber)
 	}
-	if enr.State != adapter.Initiated {
+	if enr.State != cgcom.Initiated {
 		t.Fatalf("state = %s", enr.State)
 	}
 
 	e.act(t, enr.ID, "mismatch")
-	if got := e.state(t, enr.ID); got.State != adapter.PendingAuthSources || *got.Decoded().AuthSourcesCause != "identity_mismatch" {
+	if got := e.state(t, enr.ID); got.State != cgcom.PendingAuthSources || *got.Decoded().AuthSourcesCause != "identity_mismatch" {
 		t.Fatalf("after mismatch = %s", got.State)
 	}
 
 	e.act(t, enr.ID, "obtain")
-	if got := e.state(t, enr.ID); got.State != adapter.PendingConfirmation || got.Decoded().DoctorID == nil {
+	if got := e.state(t, enr.ID); got.State != cgcom.PendingConfirmation || got.Decoded().DoctorID == nil {
 		t.Fatalf("after obtain = %s", got.State)
 	}
 
-	if err := e.svc.Decide(ctx, enr.ID, adapter.Confirm); err != nil {
+	if err := e.svc.Decide(ctx, enr.ID, cgcom.Confirm); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.state(t, enr.ID); got.State != adapter.Completed {
+	if got := e.state(t, enr.ID); got.State != cgcom.Completed {
 		t.Fatalf("after confirm = %s", got.State)
 	}
 
@@ -122,23 +122,23 @@ func TestFullFlowWithoutDoctorID(t *testing.T) {
 func TestRenewalFlow(t *testing.T) {
 	e := newEnv(t, false)
 	_, enr := e.enrol(t, "282812340") // already has a DoctorID
-	if enr.State != adapter.PendingConfirmation {
+	if enr.State != cgcom.PendingConfirmation {
 		t.Fatalf("state = %s", enr.State)
 	}
-	if err := e.svc.Decide(context.Background(), enr.ID, adapter.Confirm); err != nil {
+	if err := e.svc.Decide(context.Background(), enr.ID, cgcom.Confirm); err != nil {
 		t.Fatal(err)
 	}
 	firstProcedure := e.state(t, enr.ID).Decoded().DoctorID.ProcedureID
 
 	e.act(t, enr.ID, "renew")
 	got := e.state(t, enr.ID)
-	if got.State != adapter.Completed || got.InvalidatedReason != "renew" || got.InvalidatedProcedureID != firstProcedure {
+	if got.State != cgcom.Completed || got.InvalidatedReason != "renew" || got.InvalidatedProcedureID != firstProcedure {
 		t.Fatalf("after renew = %s %q %q", got.State, got.InvalidatedReason, got.InvalidatedProcedureID)
 	}
 
 	e.act(t, enr.ID, "obtain") // the physician gets the renewed DoctorID
 	got = e.state(t, enr.ID)
-	if got.State != adapter.PendingConfirmation || got.InvalidatedReason != "" {
+	if got.State != cgcom.PendingConfirmation || got.InvalidatedReason != "" {
 		t.Fatalf("after new DoctorID = %s, invalidated %q", got.State, got.InvalidatedReason)
 	}
 }
@@ -151,10 +151,10 @@ func TestOutOfOrderWebhookDoesNotMoveStateBack(t *testing.T) {
 	older := time.Now().UTC().Add(-time.Minute)
 	newer := time.Now().UTC()
 	cause := "identity_mismatch"
-	late := adapter.Event{EventID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", Event: adapter.EventStateChanged, OccurredAt: older,
-		Enrollment: adapter.Enrollment{ID: enr.ID, State: adapter.PendingAuthSources, CollegiateNumber: "282812345", AuthSourcesCause: &cause, UpdatedAt: &older}}
-	fresh := adapter.Event{EventID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", Event: adapter.EventStateChanged, OccurredAt: newer,
-		Enrollment: adapter.Enrollment{ID: enr.ID, State: adapter.Expired, CollegiateNumber: "282812345", UpdatedAt: &newer}}
+	late := cgcom.Event{EventID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", Event: cgcom.EventStateChanged, OccurredAt: older,
+		Enrollment: cgcom.Enrollment{ID: enr.ID, State: cgcom.PendingAuthSources, CollegiateNumber: "282812345", AuthSourcesCause: &cause, UpdatedAt: &older}}
+	fresh := cgcom.Event{EventID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", Event: cgcom.EventStateChanged, OccurredAt: newer,
+		Enrollment: cgcom.Enrollment{ID: enr.ID, State: cgcom.Expired, CollegiateNumber: "282812345", UpdatedAt: &newer}}
 
 	if s := e.stub.SendEvent(ctx, fresh); s.Status != http.StatusOK {
 		t.Fatalf("send fresh: %+v", s)
@@ -168,7 +168,7 @@ func TestOutOfOrderWebhookDoesNotMoveStateBack(t *testing.T) {
 	}
 	e.svc.ProcessPending(ctx)
 
-	if got := e.state(t, enr.ID); got.State != adapter.Expired {
+	if got := e.state(t, enr.ID); got.State != cgcom.Expired {
 		t.Fatalf("state = %s, want EXPIRED", got.State)
 	}
 	hooks, _ := e.st.WebhooksOf(ctx, enr.ID)
@@ -188,8 +188,8 @@ func TestWebhookForUnknownEnrollmentIsKeptAndReconciled(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	early := adapter.Event{EventID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", Event: adapter.EventStateChanged, OccurredAt: now,
-		Enrollment: adapter.Enrollment{ID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", State: adapter.Expired, CollegiateNumber: "282812345", UpdatedAt: &now}}
+	early := cgcom.Event{EventID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", Event: cgcom.EventStateChanged, OccurredAt: now,
+		Enrollment: cgcom.Enrollment{ID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", State: cgcom.Expired, CollegiateNumber: "282812345", UpdatedAt: &now}}
 	if s := e.stub.SendEvent(ctx, early); s.Status != http.StatusOK {
 		t.Fatalf("an unknown enrolment must still be acknowledged: %+v", s)
 	}
@@ -201,12 +201,12 @@ func TestWebhookForUnknownEnrollmentIsKeptAndReconciled(t *testing.T) {
 
 	// The enrolment becomes known: the waiting event is applied.
 	before := now.Add(-time.Second)
-	initial := adapter.Enrollment{ID: early.Enrollment.ID, State: adapter.Initiated, CollegiateNumber: "282812345", UpdatedAt: &before}
+	initial := cgcom.Enrollment{ID: early.Enrollment.ID, State: cgcom.Initiated, CollegiateNumber: "282812345", UpdatedAt: &before}
 	if _, err := e.st.UpsertEnrollment(ctx, p.ID, initial, []byte(`{"id":"dddddddd-dddd-4ddd-8ddd-dddddddddddd","state":"INITIATED"}`), true); err != nil {
 		t.Fatal(err)
 	}
 	e.svc.ProcessPending(ctx)
-	if got := e.state(t, early.Enrollment.ID); got.State != adapter.Expired {
+	if got := e.state(t, early.Enrollment.ID); got.State != cgcom.Expired {
 		t.Fatalf("state = %s, want EXPIRED", got.State)
 	}
 }
@@ -220,22 +220,22 @@ func TestDirectoryEnrolmentIsAdoptedByRegistrationNumber(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	send := func(id, coll string, state adapter.State) {
+	send := func(id, coll string, state cgcom.State) {
 		t.Helper()
-		ev := adapter.Event{EventID: id, Event: adapter.EventStateChanged, OccurredAt: now,
-			Enrollment: adapter.Enrollment{ID: id, State: state, CollegiateNumber: coll, UpdatedAt: &now}}
+		ev := cgcom.Event{EventID: id, Event: cgcom.EventStateChanged, OccurredAt: now,
+			Enrollment: cgcom.Enrollment{ID: id, State: state, CollegiateNumber: coll, UpdatedAt: &now}}
 		if s := e.stub.SendEvent(ctx, ev); s.Status != http.StatusOK {
 			t.Fatalf("webhook: %+v", s)
 		}
 	}
 
 	// A physician the clinic already has: the enrolment joins their record.
-	send("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "282812345", adapter.Initiated)
+	send("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "282812345", cgcom.Initiated)
 	// One the clinic has never seen: a record is created from the enrolment.
-	send("ffffffff-ffff-4fff-8fff-ffffffffffff", "282810010", adapter.PendingConfirmation)
+	send("ffffffff-ffff-4fff-8fff-ffffffffffff", "282810010", cgcom.PendingConfirmation)
 	e.svc.ProcessPending(ctx)
 
-	if got := e.state(t, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"); got.PractitionerID != known.ID || got.State != adapter.Initiated {
+	if got := e.state(t, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"); got.PractitionerID != known.ID || got.State != cgcom.Initiated {
 		t.Fatalf("known physician: %+v", got)
 	}
 	created := e.state(t, "ffffffff-ffff-4fff-8fff-ffffffffffff")

@@ -18,15 +18,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
-	"github.com/fikua/fikua-vitalia/internal/webhook"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 )
 
 func main() {
 	url := flag.String("url", "", "webhook URL of the running instance (required)")
 	bad := flag.Bool("bad", false, "sign with a wrong secret; the instance must answer 401")
 	enrollmentID := flag.String("enrollment", "", "enrollment id (default: a random one, stored as unknown)")
-	state := flag.String("state", string(adapter.PendingConfirmation), "enrollment state in the body")
+	state := flag.String("state", string(cgcom.PendingConfirmation), "enrollment state in the body")
 	flag.Parse()
 
 	secret := os.Getenv("VITALIA_WEBHOOK_SECRET")
@@ -42,15 +41,15 @@ func main() {
 		id = uuid()
 	}
 	now := time.Now().UTC()
-	ev := adapter.Event{
-		EventID: uuid(), Event: adapter.EventStateChanged, OccurredAt: now,
-		Enrollment: adapter.Enrollment{ID: id, State: adapter.State(*state), CollegiateNumber: "000000000", UpdatedAt: &now},
+	ev := cgcom.Event{
+		EventID: uuid(), Event: cgcom.EventStateChanged, OccurredAt: now,
+		Enrollment: cgcom.Enrollment{ID: id, State: cgcom.State(*state), CollegiateNumber: "000000000", UpdatedAt: &now},
 	}
 	body, _ := json.Marshal(ev)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	status, resp, err := webhook.Send(ctx, &http.Client{}, *url, []byte(secret), body, now)
+	status, resp, err := cgcom.Send(ctx, &http.Client{}, *url, []byte(secret), body, now)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

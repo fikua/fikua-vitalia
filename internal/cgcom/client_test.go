@@ -1,4 +1,4 @@
-package adapter_test
+package cgcom_test
 
 import (
 	"context"
@@ -11,35 +11,35 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
 	"github.com/fikua/fikua-vitalia/internal/adapterstub"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 )
 
 type recorder struct {
 	mu    sync.Mutex
-	calls []adapter.Call
+	calls []cgcom.Call
 }
 
-func (r *recorder) RecordCall(_ context.Context, c adapter.Call) error {
+func (r *recorder) RecordCall(_ context.Context, c cgcom.Call) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls = append(r.calls, c)
 	return nil
 }
 
-func newClient(t *testing.T, token string) (*adapter.Client, *recorder) {
+func newClient(t *testing.T, token string) (*cgcom.Client, *recorder) {
 	t.Helper()
 	stub := &adapterstub.Stub{Token: "platform-token", PortalURL: "https://portal.test/"}
 	srv := httptest.NewServer(stub.Handler())
 	t.Cleanup(srv.Close)
 	u, _ := url.Parse(srv.URL)
 	rec := &recorder{}
-	return adapter.NewClient(u, &http.Client{Timeout: 5 * time.Second}, adapter.StaticTokenSource(token), rec), rec
+	return cgcom.NewClient(u, &http.Client{Timeout: 5 * time.Second}, cgcom.StaticTokenSource(token), rec), rec
 }
 
-func problemOf(t *testing.T, err error) *adapter.ProblemError {
+func problemOf(t *testing.T, err error) *cgcom.ProblemError {
 	t.Helper()
-	var pe *adapter.ProblemError
+	var pe *cgcom.ProblemError
 	if !errors.As(err, &pe) {
 		t.Fatalf("error %v is not a ProblemError", err)
 	}
@@ -54,7 +54,7 @@ func TestCreateEnrollment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Status != http.StatusCreated || first.Enrollment.State != adapter.Initiated || first.Enrollment.IssuancePortalURL == nil {
+	if first.Status != http.StatusCreated || first.Enrollment.State != cgcom.Initiated || first.Enrollment.IssuancePortalURL == nil {
 		t.Fatalf("first enrol = %d %+v", first.Status, first.Enrollment)
 	}
 
@@ -70,7 +70,7 @@ func TestCreateEnrollment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if has.Enrollment.State != adapter.PendingConfirmation || has.Enrollment.DoctorID == nil {
+	if has.Enrollment.State != cgcom.PendingConfirmation || has.Enrollment.DoctorID == nil {
 		t.Fatalf("physician with DoctorID = %+v", has.Enrollment)
 	}
 
@@ -136,7 +136,7 @@ func TestProblems(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = c.Decide(ctx, res.Enrollment.ID, adapter.Confirm)
+		_, err = c.Decide(ctx, res.Enrollment.ID, cgcom.Confirm)
 		if pe := problemOf(t, err); pe.Status != 409 || pe.Problem.Type != "enrollment_state_conflict" {
 			t.Fatalf("got %+v", pe)
 		}
@@ -161,8 +161,8 @@ func TestConfirmAndCancelAreIdempotent(t *testing.T) {
 	}
 	id := res.Enrollment.ID
 	for range 2 {
-		got, err := c.Decide(ctx, id, adapter.Confirm)
-		if err != nil || got.Enrollment.State != adapter.Completed {
+		got, err := c.Decide(ctx, id, cgcom.Confirm)
+		if err != nil || got.Enrollment.State != cgcom.Completed {
 			t.Fatalf("confirm = %+v, %v", got.Enrollment, err)
 		}
 	}
@@ -173,7 +173,7 @@ func TestConfirmAndCancelAreIdempotent(t *testing.T) {
 	other, _ := c.CreateEnrollment(ctx, "X1234567L", "282812345")
 	for range 2 {
 		got, err := c.Cancel(ctx, other.Enrollment.ID)
-		if err != nil || got.Enrollment.State != adapter.Cancelled {
+		if err != nil || got.Enrollment.State != cgcom.Cancelled {
 			t.Fatalf("cancel = %+v, %v", got.Enrollment, err)
 		}
 	}

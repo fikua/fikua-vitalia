@@ -1,6 +1,6 @@
-// Package adapter is the platform's client of the enrolment API: the
-// contract types and the one place that builds requests to it.
-package adapter
+package cgcom
+
+// Contract types of the enrolment API.
 
 import (
 	"encoding/json"

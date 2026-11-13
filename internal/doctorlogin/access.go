@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/fikua/fikua-vitalia/internal/adapter"
+	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/store"
 )
 
@@ -24,7 +24,7 @@ type Decision struct {
 	Granted      bool
 	Reason       string
 	Practitioner store.Practitioner
-	State        adapter.State // of the practitioner's latest enrolment, when known
+	State        cgcom.State // of the practitioner's latest enrolment, when known
 }
 
 // Decide applies the clinic's rule: the registration number of the ID Token
@@ -45,7 +45,7 @@ func Decide(ctx context.Context, st *store.Store, id Identity) (Decision, error)
 			continue
 		}
 		candidates = append(candidates, r)
-		if r.Latest != nil && r.Latest.State == adapter.Completed && r.Latest.InvalidatedReason == "" {
+		if r.Latest != nil && r.Latest.State == cgcom.Completed && r.Latest.InvalidatedReason == "" {
 			eligible = append(eligible, r)
 		}
 	}
