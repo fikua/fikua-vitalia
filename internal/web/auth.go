@@ -95,7 +95,7 @@ func (s *Server) loginForm(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errText string) {
 	s.render(w, r, "admin_login.html", map[string]any{"Title": "Acceso a gestión", "Area": "admin-out", "Error": errText,
-		"SSO": s.cfg.StaffLogin != nil, "Password": s.cfg.UIUser != ""})
+		"SSO": s.cfg.StaffLogin != nil, "Password": s.cfg.UIUser != "" && !(s.cfg.HidePasswordForm && s.cfg.StaffLogin != nil)})
 }
 
 func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {

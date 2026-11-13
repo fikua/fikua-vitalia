@@ -14,6 +14,7 @@ import (
 
 	"github.com/fikua/fikua-vitalia/internal/adapterstub"
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
+	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/store"
 	"github.com/fikua/fikua-vitalia/internal/web"
@@ -23,6 +24,11 @@ import (
 var secret = []byte("0123456789abcdef0123456789abcdef")
 
 func newServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return newServerWith(t, web.Config{UIUser: "admision", UIPassword: "pass-de-pruebas"})
+}
+
+func newServerWith(t *testing.T, cfg web.Config) *httptest.Server {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "t.db"))
@@ -37,7 +43,7 @@ func newServer(t *testing.T) *httptest.Server {
 	client := cgcom.NewClient(u, &http.Client{Timeout: 5 * time.Second}, cgcom.StaticTokenSource("tok"), st)
 	svc := enrollment.New(st, client, logger, false)
 	receiver := &webhook.Receiver{Secret: secret, Tolerance: 5 * time.Minute, Sink: st, Logger: logger}
-	ui, err := web.New(web.Config{UIUser: "admision", UIPassword: "pass-de-pruebas"}, st, svc, receiver, nil, logger)
+	ui, err := web.New(cfg, st, svc, receiver, nil, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,5 +187,35 @@ func TestStaticAssetsAreVersioned(t *testing.T) {
 		if resp.StatusCode != http.StatusOK || (resp.Header.Get("Access-Control-Allow-Origin") == "*") != cors {
 			t.Fatalf("%s: %d, CORS %q", path, resp.StatusCode, resp.Header.Get("Access-Control-Allow-Origin"))
 		}
+	}
+}
+
+// With the form hidden, the login page offers only the clinic's account,
+// but the test account still works.
+func TestPasswordFormCanBeHiddenWithoutDisablingTheAccount(t *testing.T) {
+	staff, err := doctorlogin.New(doctorlogin.Config{Issuer: "https://auth.example.test/application/o/vitalia/", ClientID: "vitalia",
+		Secret: "s", RedirectURL: "https://vitalia.example.test/gestion/callback"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newServerWith(t, web.Config{UIUser: "admision", UIPassword: "pass-de-pruebas", StaffLogin: staff,
+		StaffGroup: "Vitalia RRHH", HidePasswordForm: true})
+	resp, err := http.Get(srv.URL + "/gestion/acceso")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if strings.Contains(string(page), `name="password"`) || !strings.Contains(string(page), "/gestion/acceso/clinica") {
+		t.Fatal("the login page must show only the clinic sign-in")
+	}
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err = noFollow.PostForm(srv.URL+"/gestion/acceso", url.Values{"user": {"admision"}, "password": {"pass-de-pruebas"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/gestion/profesionales" {
+		t.Fatalf("test account login: %d %s", resp.StatusCode, resp.Header.Get("Location"))
 	}
 }

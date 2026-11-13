@@ -65,9 +65,12 @@ type Config struct {
 	StaffGroup        string // group the ID Token must list in "groups"
 
 	// Operator UI: a local test account, optional when staff sign-in is on.
-	UIUser       string
-	UIPassword   string
-	CookieSecure bool
+	UIUser string
+	// UIPasswordForm shows the test account's form on the login page. When
+	// false the account still works, but the page only offers Authentik.
+	UIPasswordForm bool
+	UIPassword     string
+	CookieSecure   bool
 }
 
 const minSecretLen = 32
@@ -113,6 +116,7 @@ func Load(getenv func(string) string) (Config, error) {
 		UIUser:             strings.TrimSpace(getenv("VITALIA_UI_USER")),
 		UIPassword:         strings.TrimSpace(getenv("VITALIA_UI_PASSWORD")),
 		CookieSecure:       boolean("VITALIA_COOKIE_SECURE", "true"),
+		UIPasswordForm:     boolean("VITALIA_UI_PASSWORD_FORM", "true"),
 	}
 
 	if raw := required("VITALIA_ADAPTER_BASE_URL"); raw != "" {

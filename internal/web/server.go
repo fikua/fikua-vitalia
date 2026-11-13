@@ -35,10 +35,11 @@ var staticFS embed.FS
 
 // Config is the part of the configuration the UI needs.
 type Config struct {
-	UIUser       string // local test account; empty disables the password form
-	UIPassword   string
-	CookieSecure bool
-	AdapterHost  string // shown in the technical log, never the token
+	UIUser           string // local test account; empty disables it
+	UIPassword       string
+	HidePasswordForm bool // keep the test account but show only the clinic's sign-in
+	CookieSecure     bool
+	AdapterHost      string // shown in the technical log, never the token
 
 	// Staff sign-in with the clinic's identity provider; nil disables it.
 	StaffLogin *doctorlogin.Client
