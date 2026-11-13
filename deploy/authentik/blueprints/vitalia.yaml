@@ -213,7 +213,7 @@ entries:
       profile_url: ""
       additional_scopes: !Env [DOCTORID_SCOPES, doctorid]
       pkce: S256
-      authorization_code_auth_method: basic_auth
+      authorization_code_auth_method: post_body
       user_matching_mode: username_link
       authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
       enrollment_flow: null
