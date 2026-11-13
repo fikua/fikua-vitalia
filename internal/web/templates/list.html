@@ -20,16 +20,16 @@
         <svg class="i quick-arrow"><use href="#i-arrow"/></svg>
       </a>
     </div>
+    <div class="stats">
+      <div class="stat"><span class="stat-icon blue"><svg class="i"><use href="#i-users"/></svg></span><span><strong>{{.Total}}</strong>Profesionales</span></div>
+      <div class="stat"><span class="stat-icon teal"><svg class="i"><use href="#i-clipboard"/></svg></span><span><strong>{{index .Counts "revision"}}</strong>Por revisar</span></div>
+      <div class="stat"><span class="stat-icon sky"><svg class="i"><use href="#i-clock"/></svg></span><span><strong>{{index .Counts "espera"}}</strong>Esperando al médico</span></div>
+      <div class="stat"><span class="stat-icon green"><svg class="i"><use href="#i-check"/></svg></span><span><strong>{{index .Counts "verificados"}}</strong>Con acceso habilitado</span></div>
+    </div>
   </div>
 </section>
 
 <div class="wrap">
-  <div class="stats">
-    <div class="stat"><span class="stat-icon blue"><svg class="i"><use href="#i-users"/></svg></span><span><strong>{{.Total}}</strong>Profesionales</span></div>
-    <div class="stat"><span class="stat-icon teal"><svg class="i"><use href="#i-clipboard"/></svg></span><span><strong>{{index .Counts "revision"}}</strong>Por revisar</span></div>
-    <div class="stat"><span class="stat-icon sky"><svg class="i"><use href="#i-clock"/></svg></span><span><strong>{{index .Counts "espera"}}</strong>Esperando al médico</span></div>
-    <div class="stat"><span class="stat-icon green"><svg class="i"><use href="#i-check"/></svg></span><span><strong>{{index .Counts "verificados"}}</strong>Con acceso habilitado</span></div>
-  </div>
 
   <section class="section">
     <div class="section-head">

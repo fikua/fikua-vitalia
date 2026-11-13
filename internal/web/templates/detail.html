@@ -114,6 +114,24 @@
         </dl>
       </section>
       {{end}}
+
+      <section class="section activity">
+        <div class="section-head"><h2>Actividad</h2><span class="muted small">Avisos recibidos y llamadas al sistema DoctorID</span></div>
+        {{if $.Activity}}
+        <ol class="timeline">
+          {{range $.Activity}}
+          <li class="{{.Kind}}">
+            <span class="tl-icon tone-{{.Tone}}"><svg class="i"><use href="{{if eq .Kind "in"}}#i-in{{else}}#i-out{{end}}"/></svg></span>
+            <details>
+              <summary><strong>{{.Title}}</strong><span class="small muted">{{time .At}}</span><span class="small mono tl-meta">{{.Meta}}</span></summary>
+              {{if .Note}}<p class="small">{{.Note}}</p>{{end}}
+              {{range .Bodies}}<p class="small muted">{{.Label}}</p><pre>{{pretty .Body}}</pre>{{end}}
+            </details>
+          </li>
+          {{end}}
+        </ol>
+        {{else}}<div class="card empty"><p class="muted">Todavía no hay actividad.</p></div>{{end}}
+      </section>
     </div>
 
     <aside class="stack">
@@ -146,7 +164,7 @@
         <h2>Enrolamiento</h2>
         <dl class="kv single">
           <dt>Identificador</dt><dd class="mono small">{{.ID}}</dd>
-          <dt>Estado</dt><dd class="mono">{{.State}}</dd>
+          <dt>Estado</dt><dd><span class="pill {{stateTone .State}}">{{stateLabel .State}}</span> <span class="mono small muted">{{.State}}</span></dd>
           <dt>Caduca</dt><dd>{{timep .E.ExpiresAt}}</dd>
           <dt>Actualizada en el sistema</dt><dd>{{timep .E.UpdatedAt}}</dd>
           <dt>Sincronizada</dt><dd>{{time .SyncedAt}}</dd>
@@ -163,23 +181,6 @@
     </aside>
   </div>
 
-  <section class="section">
-    <div class="section-head"><h2>Actividad</h2><span class="muted small">Avisos recibidos y llamadas al sistema DoctorID</span></div>
-    {{if $.Activity}}
-    <ol class="timeline">
-      {{range $.Activity}}
-      <li class="{{.Kind}}">
-        <span class="tl-icon tone-{{.Tone}}"><svg class="i"><use href="{{if eq .Kind "in"}}#i-in{{else}}#i-out{{end}}"/></svg></span>
-        <details>
-          <summary><strong>{{.Title}}</strong><span class="small muted">{{time .At}}</span><span class="small mono tl-meta">{{.Meta}}</span></summary>
-          {{if .Note}}<p class="small">{{.Note}}</p>{{end}}
-          {{range .Bodies}}<p class="small muted">{{.Label}}</p><pre>{{pretty .Body}}</pre>{{end}}
-        </details>
-      </li>
-      {{end}}
-    </ol>
-    {{else}}<div class="card empty"><p class="muted">Todavía no hay actividad.</p></div>{{end}}
-  </section>
 {{else}}
   <section class="card state-card tone-bad">
     <h2>Sin inscripción</h2>
