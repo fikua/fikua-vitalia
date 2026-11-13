@@ -169,8 +169,13 @@ entries:
       redirect_uris:
         - matching_mode: strict
           url: !Format ["%s/gestion/callback", !Env VITALIA_URL]
+        - matching_mode: strict
+          url: !Format ["%s/gestion/acceso", !Env VITALIA_URL]
+          redirect_uri_type: logout
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      # Logging out of Vitalia logs out of Authentik too (the default
+      # provider flow only says goodbye and keeps the Authentik session).
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-invalidation-flow]]
       signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
       sub_mode: hashed_user_id
       issuer_mode: per_provider
@@ -293,9 +298,12 @@ entries:
       redirect_uris:
         - matching_mode: strict
           url: !Format ["%s/profesional/callback", !Env VITALIA_URL]
+        - matching_mode: strict
+          url: !Format ["%s/profesional", !Env VITALIA_URL]
+          redirect_uri_type: logout
       authentication_flow: !KeyOf flow-doctorid
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-invalidation-flow]]
       signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
       sub_mode: hashed_user_id
       issuer_mode: per_provider

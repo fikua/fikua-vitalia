@@ -37,7 +37,8 @@ var staticFS embed.FS
 type Config struct {
 	UIUser           string // local test account; empty disables it
 	UIPassword       string
-	HidePasswordForm bool // keep the test account but show only the clinic's sign-in
+	HidePasswordForm bool   // keep the test account but show only the clinic's sign-in
+	PublicURL        string // where the identity provider sends the browser back after logout
 	CookieSecure     bool
 	AdapterHost      string // shown in the technical log, never the token
 

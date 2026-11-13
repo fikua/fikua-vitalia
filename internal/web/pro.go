@@ -144,11 +144,29 @@ func (s *Server) recordLogin(r *http.Request, ev store.LoginEvent) {
 }
 
 func (s *Server) proLogout(w http.ResponseWriter, r *http.Request) {
+	var idToken string
+	if d, ok := s.currentDoctor(r); ok {
+		idToken = d.Identity.RawIDToken
+	}
 	if c, err := r.Cookie(doctorCookie); err == nil {
 		s.doctors.delete(c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: doctorCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.cfg.CookieSecure})
 	setFlash(w, flash{Kind: "ok", Text: "Has cerrado la sesión en Clínica Vitalia."})
+	// End the session at the identity provider too, so the next sign-in
+	// asks for the DoctorID again.
+	if idToken != "" && s.login != nil {
+		back := ""
+		if s.cfg.PublicURL != "" {
+			back = s.cfg.PublicURL + "/profesional"
+		}
+		if to, err := s.login.LogoutURL(r.Context(), idToken, back); err == nil && to != "" {
+			http.Redirect(w, r, to, http.StatusSeeOther)
+			return
+		} else if err != nil {
+			s.logger.Warn("end session at the identity provider", "err", err)
+		}
+	}
 	http.Redirect(w, r, "/profesional", http.StatusSeeOther)
 }
 

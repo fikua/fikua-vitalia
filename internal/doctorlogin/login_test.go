@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -282,5 +283,47 @@ func TestLoginWithClientSecret(t *testing.T) {
 	if client, _ := doctorlogin.New(doctorlogin.Config{Issuer: idpSrv.URL, ClientID: "authentik", Secret: "s3cret",
 		RedirectURL: "https://ak.test/cb"}); client.JWKS() != nil {
 		t.Fatal("a client secret relying party publishes no JWKS")
+	}
+}
+
+// Logging out of the clinic also ends the session at the identity provider
+// (RP-Initiated Logout) when it publishes an end_session_endpoint.
+func TestLogoutURL(t *testing.T) {
+	var srv *httptest.Server
+	withEnd := true
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		meta := map[string]any{"issuer": srv.URL, "authorization_endpoint": srv.URL + "/authorize",
+			"token_endpoint": srv.URL + "/token", "jwks_uri": srv.URL + "/jwks"}
+		if withEnd {
+			meta["end_session_endpoint"] = srv.URL + "/end-session/"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(meta)
+	}))
+	t.Cleanup(srv.Close)
+	client, err := doctorlogin.New(doctorlogin.Config{Issuer: srv.URL, ClientID: "vitalia", Secret: "s", RedirectURL: "https://v.test/cb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := client.LogoutURL(context.Background(), "the.id.token", "https://v.test/gestion/acceso")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(got)
+	q := u.Query()
+	if u.Path != "/end-session/" || q.Get("client_id") != "vitalia" || q.Get("id_token_hint") != "the.id.token" ||
+		q.Get("post_logout_redirect_uri") != "https://v.test/gestion/acceso" {
+		t.Fatalf("logout URL = %s", got)
+	}
+	// Without a hint, no redirect back is requested (the spec ties them).
+	got, _ = client.LogoutURL(context.Background(), "", "https://v.test/gestion/acceso")
+	if u, _ := url.Parse(got); u.Query().Has("post_logout_redirect_uri") {
+		t.Fatalf("redirect without hint: %s", got)
+	}
+	// A provider without the endpoint: nothing to do there.
+	withEnd = false
+	other, _ := doctorlogin.New(doctorlogin.Config{Issuer: srv.URL, ClientID: "vitalia", Secret: "s", RedirectURL: "https://v.test/cb"})
+	if got, err := other.LogoutURL(context.Background(), "the.id.token", ""); err != nil || got != "" {
+		t.Fatalf("no end_session_endpoint: %q, %v", got, err)
 	}
 }

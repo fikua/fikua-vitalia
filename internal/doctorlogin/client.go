@@ -63,6 +63,7 @@ type Identity struct {
 	AuthTime         time.Time
 	Claims           map[string]any
 	RawClaims        string
+	RawIDToken       string // kept to end the session at the provider (id_token_hint)
 }
 
 // Errors of the callback. An IdPError carries the error the IdP returned.
@@ -246,7 +247,40 @@ func (c *Client) Finish(ctx context.Context, q url.Values, browserState string) 
 	if idt.Nonce != pl.nonce {
 		return Identity{}, ErrNonceMismatch
 	}
-	return identityOf(idt)
+	id, err := identityOf(idt)
+	id.RawIDToken = raw
+	return id, err
+}
+
+// LogoutURL is where to send the browser to end the session at the
+// identity provider too (OIDC RP-Initiated Logout): its end_session_endpoint
+// with the ID Token as hint and the address to come back to. It returns ""
+// when the provider has no such endpoint.
+func (c *Client) LogoutURL(ctx context.Context, idTokenHint, postLogoutRedirect string) (string, error) {
+	p, err := c.discover(ctx)
+	if err != nil {
+		return "", err
+	}
+	var meta struct {
+		EndSession string `json:"end_session_endpoint"`
+	}
+	if err := p.Claims(&meta); err != nil || meta.EndSession == "" {
+		return "", nil
+	}
+	u, err := url.Parse(meta.EndSession)
+	if err != nil {
+		return "", fmt.Errorf("end_session_endpoint: %w", err)
+	}
+	q := u.Query()
+	q.Set("client_id", c.cfg.ClientID)
+	if idTokenHint != "" {
+		q.Set("id_token_hint", idTokenHint)
+		if postLogoutRedirect != "" { // the spec ties the redirect to the hint
+			q.Set("post_logout_redirect_uri", postLogoutRedirect)
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }
 
 func (c *Client) issuerOf(p *oidc.Provider) string {

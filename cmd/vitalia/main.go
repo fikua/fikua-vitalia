@@ -86,7 +86,7 @@ func run(logger *slog.Logger) error {
 			return err
 		}
 	}
-	ui, err := web.New(web.Config{UIUser: cfg.UIUser, UIPassword: cfg.UIPassword, HidePasswordForm: !cfg.UIPasswordForm, CookieSecure: cfg.CookieSecure,
+	ui, err := web.New(web.Config{UIUser: cfg.UIUser, UIPassword: cfg.UIPassword, HidePasswordForm: !cfg.UIPasswordForm, PublicURL: cfg.PublicURL.String(), CookieSecure: cfg.CookieSecure,
 		AdapterHost: cfg.AdapterBaseURL.String(), StaffLogin: staff, StaffGroup: cfg.StaffGroup}, st, svc, receiver, login, logger)
 	if err != nil {
 		return err

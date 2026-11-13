@@ -115,8 +115,12 @@ func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) startStaffSession(w http.ResponseWriter, r *http.Request) {
+	s.startStaffSessionWith(w, r, nil)
+}
+
+func (s *Server) startStaffSessionWith(w http.ResponseWriter, r *http.Request, data *staffSession) {
 	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: s.sessions.create(), Path: "/", HttpOnly: true,
+		Name: sessionCookie, Value: s.sessions.createWith(data), Path: "/", HttpOnly: true,
 		Secure: s.cfg.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: int(sessionTTL.Seconds()),
 	})
 	http.Redirect(w, r, "/gestion/profesionales", http.StatusSeeOther)
@@ -168,13 +172,38 @@ func (s *Server) staffCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("staff login granted", "subject", id.Subject, "username", id.Username)
-	s.startStaffSession(w, r)
+	s.startStaffSessionWith(w, r, &staffSession{IDToken: id.RawIDToken})
 }
 
+// staffSession is what the clinic keeps about a staff member signed in
+// with the clinic's identity provider.
+type staffSession struct{ IDToken string }
+
+// logout ends the Vitalia session and, for a staff member who came through
+// the clinic's identity provider, that session too: otherwise the next
+// sign-in would reuse it without asking.
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	var idToken string
 	if c, err := r.Cookie(sessionCookie); err == nil {
+		if v, ok := s.sessions.get(c.Value); ok {
+			if ss, ok := v.(*staffSession); ok {
+				idToken = ss.IDToken
+			}
+		}
 		s.sessions.delete(c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.cfg.CookieSecure})
+	if idToken != "" && s.cfg.StaffLogin != nil {
+		back := ""
+		if s.cfg.PublicURL != "" {
+			back = s.cfg.PublicURL + "/gestion/acceso"
+		}
+		if to, err := s.cfg.StaffLogin.LogoutURL(r.Context(), idToken, back); err == nil && to != "" {
+			http.Redirect(w, r, to, http.StatusSeeOther)
+			return
+		} else if err != nil {
+			s.logger.Warn("end session at the identity provider", "err", err)
+		}
+	}
 	http.Redirect(w, r, "/gestion/acceso", http.StatusSeeOther)
 }
