@@ -35,4 +35,10 @@ Resumen de lo acordado en cada correo. Los correos completos no se guardan aquí
   Implementado tal como lo hace su SDK Java (código abierto).
 - **Si no se confirma en 30 minutos**: el enrolamiento pasa a `EXPIRED`, llega un aviso y hay que enrolar de nuevo. El nuevo enrolamiento responde directamente `PENDING_CONFIRMATION`, sin que el médico vuelva al portal.
 - **Secreto del webhook**: recibido por canal seguro. Guardado en el servidor (`VITALIA_CGCOM_WEBHOOK_SECRET`), aún no activo: el webhook sigue validando los avisos del simulador hasta que pasemos al servicio real.
-- **Primera petición de token** (13-11-2026, 12:56:40 UTC, desde el servidor): `400 invalid_client`, sin descripción. Pendiente de que CGCOM mire el motivo en su lado.
+- **Primera petición de token** (13-11-2026, 12:56:40 UTC, desde el servidor): `400 invalid_client`, sin descripción. El motivo: el Verifier espera la credencial como JWT W3C (VC 2.0), no como SD-JWT.
+
+## 4. Credencial en formato JWT W3C
+
+- CGCOM sustituye la credencial SD-JWT por una **JWT W3C** (modelo VC 2.0: el payload es la credencial, sin claim `vc`, con el mandato en `credentialSubject.mandate`). Misma clave y mismo `client_id`.
+- En `vp.verifiableCredential` va el JWT tal cual, sin disclosures ni `~`. Nuestro código no necesitó cambios: ya mete la credencial tal cual y lee `cnf.jwk` de la raíz.
+- **Token obtenido** (13-11-2026, 13:28:45 UTC): token de 15 minutos con `tenant: cgcom`, `scope: machine learcredential` y nuestro mandato (Clínica Vitalia, poder `Onboarding` en el dominio `cgcom`).

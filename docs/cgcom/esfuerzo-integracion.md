@@ -19,7 +19,7 @@ Son estimaciones de lo que cuesta cada trabajo, no horas registradas. La columna
 | 3 | Estados del enrolamiento en la plataforma: ficha, pantallas de RRHH, revisión y confirmación de datos | 2 | Implementado y probado |
 | 4 | Regla de acceso: solo médicos con enrolamiento completado y DoctorID vigente; bloqueo al recibir un aviso de invalidación | 1 | Implementado y probado |
 | 5 | Credencial de plataforma: par ES256 y clave pública JWK (`kty`, `crv`, `x`, `y`) | 0,25 | Implementado y probado (`cgcomkey`) |
-| 6 | Token de acceso por `private_key_jwt` (RFC 7523): aserción firmada, caché, renovación, reintento ante 401 | 1–1,5 | Implementado y probado; falta probarlo contra CGCOM |
+| 6 | Token de acceso por `private_key_jwt` (RFC 7523): presentación (VP-JWT) de la credencial de plataforma dentro de la aserción, caché, renovación, reintento ante 401 | 1–1,5 | Implementado y probado contra el Verifier de CGCOM (DEV) |
 | 7 | Organizar la integración en un módulo propio (`internal/cgcom`) | 0,5 | Hecho |
 | 8 | Configuración y despliegue contra el entorno de CGCOM | 0,5 | Preparado; falta la credencial de CGCOM |
 | 9 | Ajustes al contrato según la guía técnica | 0,5–1 | Pendiente de la guía |
@@ -33,7 +33,7 @@ Son estimaciones de lo que cuesta cada trabajo, no horas registradas. La columna
 | 11 | Cambio de formato del aviso (solo referencia, u otra firma como JWS) | 0–1,5 | CGCOM está decidiéndolo. Si solo trae la referencia, el coste es casi nulo: Vitalia ya consulta el enrolamiento tras cada aviso. |
 | 12 | Confirmar los datos en 30 minutos | 0,5–1 | Decisión de producto: avisar a RRHH al momento, o confirmar automáticamente cuando los datos del registro coinciden con la ficha. |
 | 13 | Avisar al médico con el enlace al portal de emisión | 0,5–1 | CGCOM no avisa al médico. Hoy RRHH ve el enlace y lo envía a mano; automatizarlo supone enviar correo. |
-| 14 | Mantener el directorio de la plataforma (Authentik) al día con los médicos enrolados | ~1 | Para entrar con DoctorID a través de Authentik, el médico tiene que existir allí con su número de colegiado. |
+| 14 | Mantener el directorio de la plataforma (Authentik) al día con los médicos enrolados | ~1 | Decidido: automático. Implementado y probado: al dar de alta o reinscribir, Vitalia crea o actualiza el usuario por la API de Authentik con una cuenta de servicio de permisos mínimos. |
 | | **Total con todo** | **≈ 12–16** | |
 
 ## Lo que no es desarrollo pero bloquea
