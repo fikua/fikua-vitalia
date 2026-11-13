@@ -230,6 +230,32 @@ entries:
       meta_description: Área profesional y gestión de profesionales
       policy_engine_mode: any
 
+  # ------------------------------ DoctorID not of the clinic
+  # The DoctorID source never creates users: a DoctorID whose registration
+  # number is not a physician of the clinic ends here, with a message,
+  # instead of Authentik's "Source is not configured for enrollment".
+  - model: authentik_stages_deny.denystage
+    id: stage-doctorid-unknown
+    identifiers: {name: vitalia-doctorid-unknown}
+    attrs:
+      deny_message: >-
+        Tu DoctorID es válido, pero no corresponde a ningún médico de Clínica
+        Vitalia. Si trabajas en la clínica, pide a Recursos Humanos que te den
+        de alta con tu número de colegiado.
+  - model: authentik_flows.flow
+    id: flow-doctorid-unknown
+    identifiers: {slug: vitalia-doctorid-unknown}
+    attrs:
+      name: "Vitalia: DoctorID que no es de la clínica"
+      title: Clínica Vitalia · Área profesional
+      designation: enrollment
+      authentication: none
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow-doctorid-unknown
+      stage: !KeyOf stage-doctorid-unknown
+      order: 10
+
   # ------------------------------ DoctorID identity provider (CGCOM Verifier)
   - model: authentik_sources_oauth.oauthsourcepropertymapping
     id: source-doctorid-mapping
@@ -259,7 +285,7 @@ entries:
       authorization_code_auth_method: post_body
       user_matching_mode: username_link
       authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
-      enrollment_flow: null
+      enrollment_flow: !KeyOf flow-doctorid-unknown
       user_property_mappings: [!KeyOf source-doctorid-mapping]
 
   # ------------------------------ physicians' sign-in (straight to DoctorID)
@@ -338,13 +364,15 @@ entries:
     identifiers: {domain: authentik-default}
     attrs:
       branding_title: Clínica Vitalia
-      branding_logo: !Format ["%s/static/logo-vitalia.svg", !Env VITALIA_URL]
+      # %(theme)s: logo-vitalia-light.svg or logo-vitalia-dark.svg (white text).
+      branding_logo: !Format ["%s/static/logo-vitalia-%%(theme)s.svg", !Env VITALIA_URL]
       branding_favicon: !Format ["%s/static/favicon.svg", !Env VITALIA_URL]
       branding_default_flow_background: !Format ["%s/static/auth-background.svg", !Env VITALIA_URL]
+      # The theme follows the browser, as Vitalia's own pages do.
       attributes:
         settings:
           theme:
-            base: light
+            base: automatic
       branding_custom_css: !Format
         - |
           @font-face {
@@ -356,14 +384,33 @@ entries:
             --pf-global--FontFamily--heading--sans-serif: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
             --pf-global--FontFamily--redhat-updated--sans-serif: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
             --pf-global--FontFamily--redhat-updated--heading--sans-serif: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+            --pf-global--BorderRadius--sm: 10px;
+            --pf-global--BorderRadius--lg: 14px;
+            /* Light: Vitalia's light palette. */
             --pf-global--primary-color--100: #0b5fae;
             --pf-global--primary-color--200: #094f91;
             --pf-global--primary-color--dark-100: #094f91;
             --pf-global--link--Color: #0b5fae;
             --pf-global--link--Color--hover: #094f91;
-            --pf-global--Color--100: #13233a;
-            --pf-global--BorderRadius--sm: 10px;
-            --pf-global--BorderRadius--lg: 14px;
+          }
+          /* Dark: Vitalia's dark palette (its own pages switch the same way). */
+          [data-theme="dark"], :host([theme="dark"]) {
+            --pf-global--BackgroundColor--100: #101e33;
+            --pf-global--BackgroundColor--150: #0a1424;
+            --pf-global--BackgroundColor--200: #0d192c;
+            --pf-global--Color--100: #e4ecf6;
+            --pf-global--Color--200: #98a8bf;
+            --pf-global--BorderColor--100: #2b4165;
+            /* A deeper blue than Vitalia's dark accent, so white text on
+               buttons keeps its contrast. */
+            --pf-global--primary-color--100: #1f6fc0;
+            --pf-global--primary-color--200: #2a80d6;
+            --pf-global--primary-color--dark-100: #2a80d6;
+            --pf-global--link--Color: #7cbaf4;
+            --pf-global--link--Color--hover: #a6cff8;
+          }
+          [data-theme="dark"] ak-flow-executor::part(main) {
+            background-color: #101e33;
           }
           @media (min-width: 768px) {
             ak-flow-executor::part(main) {
