@@ -42,11 +42,12 @@ El correo no recibe mensajes: `.example` es un dominio reservado. Las comunicaci
 
 Para rotarla: generar otro par con `cgcomkey`, enviar el nuevo JWK a CGCOM y sustituir `VITALIA_CGCOM_SIGNING_KEY` cuando lo confirmen.
 
-## Lo que entrega CGCOM (pendiente)
+## Lo que entrega CGCOM
 
-| Dato | Dónde va |
-| --- | --- |
-| Credencial de plataforma (client id) | `VITALIA_CGCOM_CLIENT_ID` |
-| URL del token | `VITALIA_CGCOM_TOKEN_URL` (con ella se activa `private_key_jwt`) |
-| Secreto del webhook | `VITALIA_WEBHOOK_SECRET` |
-| API (desarrollo) | `VITALIA_ADAPTER_BASE_URL=https://cgcom.dev.eudistack.net/cgcom-adapter` |
+| Dato | Dónde va | Estado |
+| --- | --- | --- |
+| Credencial de plataforma (LEARCredentialMachine, SD-JWT) | `VITALIA_CGCOM_CREDENTIAL` | Recibida, en el servidor |
+| `client_id`: el `did:key` de nuestra clave | Se calcula de la clave (`VITALIA_CGCOM_CLIENT_ID` vacío) | Comprobado |
+| Token: `https://cgcom.dev.eudistack.net/verifier/oidc/token`, audiencia `https://cgcom.dev.eudistack.net/verifier`, tenant `cgcom` | `VITALIA_CGCOM_TOKEN_URL`, `_TOKEN_AUDIENCE`, `_TENANT` | En el servidor; primera petición rechazada (`invalid_client`) |
+| Secreto del webhook | `VITALIA_CGCOM_WEBHOOK_SECRET`, que sustituirá a `VITALIA_WEBHOOK_SECRET` al pasar al servicio real | Recibido, en el servidor, sin activar |
+| API (desarrollo) | `VITALIA_ADAPTER_BASE_URL=https://cgcom.dev.eudistack.net/cgcom-adapter` | Pendiente de preproducción |

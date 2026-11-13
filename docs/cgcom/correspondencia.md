@@ -21,3 +21,18 @@ Resumen de lo acordado en cada correo. Los correos completos no se guardan aquí
 - API de desarrollo: `https://cgcom.dev.eudistack.net/cgcom-adapter`.
 - Plazos por defecto: 7 días para que el médico obtenga su DoctorID y 30 minutos para confirmar sus datos.
 - Por cerrar en su lado: colegiados de prueba, fecha de preproducción y formato del aviso del webhook (datos o solo referencia, y firma).
+
+## 3. Credencial de plataforma, guía técnica y token
+
+- Recibida la **credencial de plataforma** (LEARCredentialMachine, SD-JWT), atada a nuestra clave pública. Su `mandatee.id` es `did:key:zDnaemwTYeERGFiFZFgZzB3nPtPwUNF1tHunWiRQ8nkNTUmQo`, que coincide con el `did:key` calculado de nuestra clave (`internal/cgcom/didkey_test.go`). No es secreta, pero solo funciona con nuestra clave privada. Está en el `.env` del servidor (`VITALIA_CGCOM_CREDENTIAL`).
+- Recibida la **guía técnica** (*Integrar tu plataforma con DoctorID*, v0.1.1, borrador).
+- **Token**:
+  - endpoint `https://cgcom.dev.eudistack.net/verifier/oidc/token`, grant `client_credentials` con `client_assertion` (RFC 7523);
+  - en la aserción: `iss` = `sub` = `client_id` (el `did:key`), `aud` = `https://cgcom.dev.eudistack.net/verifier`, `jti` y caducidad de 120 s;
+  - en el claim `vp_token`: el VP-JWT de la credencial en base64 estándar;
+  - sin `scope`, con la cabecera `X-Tenant: cgcom`.
+
+  Implementado tal como lo hace su SDK Java (código abierto).
+- **Si no se confirma en 30 minutos**: el enrolamiento pasa a `EXPIRED`, llega un aviso y hay que enrolar de nuevo. El nuevo enrolamiento responde directamente `PENDING_CONFIRMATION`, sin que el médico vuelva al portal.
+- **Secreto del webhook**: recibido por canal seguro. Guardado en el servidor (`VITALIA_CGCOM_WEBHOOK_SECRET`), aún no activo: el webhook sigue validando los avisos del simulador hasta que pasemos al servicio real.
+- **Primera petición de token** (13-11-2026, 12:56:40 UTC, desde el servidor): `400 invalid_client`, sin descripción. Pendiente de que CGCOM mire el motivo en su lado.
