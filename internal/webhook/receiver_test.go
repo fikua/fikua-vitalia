@@ -7,13 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/store"
+	"github.com/fikua/fikua-vitalia/internal/store/storetest"
 	"github.com/fikua/fikua-vitalia/internal/webhook"
 )
 
@@ -21,11 +21,7 @@ var secret = []byte("0123456789abcdef0123456789abcdef")
 
 func newReceiver(t *testing.T) (*webhook.Receiver, *store.Store, *int) {
 	t.Helper()
-	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "t.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := storetest.Open(t)
 	notified := 0
 	return &webhook.Receiver{Secret: secret, Tolerance: 5 * time.Minute, Sink: st,
 		Notify: func() { notified++ }, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}, st, &notified

@@ -1,11 +1,25 @@
-.PHONY: test vet fmt build demo sendhook sendhook-bad authentik-env authentik-up authentik-down authentik-logs demo-authentik
+.PHONY: test vet fmt build db db-down test-db demo sendhook sendhook-bad authentik-env authentik-up authentik-down authentik-logs demo-authentik
 
 # Local demo secrets: throwaway values, only for `make demo`.
 DEMO_SECRET ?= local-demo-webhook-secret-0123456789abcdef
 DEMO_TOKEN  ?= local-demo-token
 
-test:
-	go test -race ./...
+# Throwaway local PostgreSQL (the platform uses its shared cluster, one schema
+# per service; here a plain database is enough).
+LOCAL_DB_URL ?= postgres://vitalia:vitalia@localhost:54320/vitalia?sslmode=disable
+
+db:
+	@docker inspect vitalia-dev-db >/dev/null 2>&1 || docker run -d --name vitalia-dev-db \
+		-e POSTGRES_USER=vitalia -e POSTGRES_PASSWORD=vitalia -e POSTGRES_DB=vitalia -p 54320:5432 postgres:17-alpine
+	@docker start vitalia-dev-db >/dev/null
+	@until docker exec vitalia-dev-db pg_isready -U vitalia -q; do sleep 1; done
+
+db-down:
+	-docker rm -f vitalia-dev-db
+
+# The store tests need PostgreSQL (they are skipped without TEST_DATABASE_URL).
+test: db
+	TEST_DATABASE_URL=$(LOCAL_DB_URL) go test -race -count=1 ./...
 
 vet:
 	go vet ./...
@@ -17,14 +31,14 @@ build:
 # Runs the clinic (http://localhost:8080: website, /profesional, /gestion with
 # rrhh / pruebas) against the local simulators (enrolment API, identity
 # provider, and http://localhost:8091/_sim). Ctrl+C stops everything.
-demo: build
+demo: build db
 	@mkdir -p data
 	@test -f data/demo-signing-key.b64 || openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 2>/dev/null \
 		| openssl pkcs8 -topk8 -nocrypt -outform DER | base64 > data/demo-signing-key.b64
 	@trap 'kill 0' INT TERM EXIT; \
 	VITALIA_WEBHOOK_SECRET=$(DEMO_SECRET) FAKE_TOKEN=$(DEMO_TOKEN) FAKE_IDP_ISSUER=http://localhost:8091 ./bin/fakeadapter & \
 	VITALIA_WEBHOOK_SECRET=$(DEMO_SECRET) VITALIA_ADAPTER_TOKEN=$(DEMO_TOKEN) \
-	VITALIA_ADAPTER_BASE_URL=http://localhost:8090 VITALIA_DB_PATH=data/vitalia.db \
+	VITALIA_ADAPTER_BASE_URL=http://localhost:8090 VITALIA_DATABASE_URL=$(LOCAL_DB_URL) \
 	VITALIA_OIDC_ISSUER=http://localhost:8091 VITALIA_OIDC_SIGNING_KEY="$$(cat data/demo-signing-key.b64)" \
 	VITALIA_UI_USER=rrhh VITALIA_UI_PASSWORD=pruebas VITALIA_COOKIE_SECURE=false ./bin/vitalia & \
 	wait
@@ -89,7 +103,7 @@ demo-authentik: build
 	FAKE_IDP_FED_REDIRECT_URI=http://localhost:$${COMPOSE_PORT_HTTP:-9000}/source/oauth/callback/doctorid/ \
 	./bin/fakeadapter & \
 	VITALIA_WEBHOOK_SECRET=$(DEMO_SECRET) VITALIA_ADAPTER_TOKEN=$(DEMO_TOKEN) \
-	VITALIA_ADAPTER_BASE_URL=http://localhost:8090 VITALIA_DB_PATH=data/vitalia-authentik.db \
+	VITALIA_ADAPTER_BASE_URL=http://localhost:8090 VITALIA_DATABASE_URL=$(LOCAL_DB_URL) \
 	VITALIA_OIDC_ISSUER=$$AK_PRO_ISSUER VITALIA_OIDC_CLIENT_ID="$$VITALIA_PRO_CLIENT_ID" VITALIA_OIDC_CLIENT_SECRET="$$VITALIA_PRO_CLIENT_SECRET" \
 	VITALIA_STAFF_OIDC_ISSUER=$$AK_ISSUER VITALIA_STAFF_OIDC_CLIENT_ID="$$VITALIA_CLIENT_ID" VITALIA_STAFF_OIDC_CLIENT_SECRET="$$VITALIA_CLIENT_SECRET" \
 	VITALIA_DIRECTORY_URL=http://localhost:$${COMPOSE_PORT_HTTP:-9000} VITALIA_DIRECTORY_TOKEN="$$VITALIA_DIRECTORY_TOKEN" \

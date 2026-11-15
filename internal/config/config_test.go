@@ -13,6 +13,7 @@ func envOf(m map[string]string) func(string) string { return func(k string) stri
 func TestLoadDefaults(t *testing.T) {
 	c, err := Load(envOf(map[string]string{
 		"VITALIA_ADAPTER_BASE_URL": "https://adapter.example.test/base/",
+		"VITALIA_DATABASE_URL":     "postgres://u:p@localhost/db",
 		"VITALIA_WEBHOOK_SECRET":   strings.Repeat("s", 32),
 		"VITALIA_UI_USER":          "u",
 		"VITALIA_UI_PASSWORD":      "p",
@@ -28,6 +29,7 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadFailsFast(t *testing.T) {
 	_, err := Load(envOf(map[string]string{
 		"VITALIA_ADAPTER_BASE_URL":    "ftp://x",
+		"VITALIA_DATABASE_URL":        "postgres://u:p@localhost/db",
 		"VITALIA_WEBHOOK_SECRET":      "short",
 		"VITALIA_SIGNATURE_TOLERANCE": "soon",
 	}))
@@ -47,6 +49,7 @@ func TestLoadFailsFast(t *testing.T) {
 func TestLoadWithTheClinicIdentityProvider(t *testing.T) {
 	base := map[string]string{
 		"VITALIA_ADAPTER_BASE_URL":   "https://adapter.example.test",
+		"VITALIA_DATABASE_URL":       "postgres://u:p@localhost/db",
 		"VITALIA_WEBHOOK_SECRET":     strings.Repeat("s", 32),
 		"VITALIA_OIDC_ISSUER":        "https://auth.example.test/application/o/vitalia/",
 		"VITALIA_OIDC_CLIENT_SECRET": "x",
@@ -74,6 +77,7 @@ func TestLoadCGCOMPlatformCredential(t *testing.T) {
 	enc, _ := cgcom.EncodePrivateKey(key)
 	base := map[string]string{
 		"VITALIA_ADAPTER_BASE_URL": "https://cgcom.dev.example.test/cgcom-adapter",
+		"VITALIA_DATABASE_URL":     "postgres://u:p@localhost/db",
 		"VITALIA_WEBHOOK_SECRET":   strings.Repeat("s", 32),
 		"VITALIA_UI_USER":          "u",
 		"VITALIA_UI_PASSWORD":      "p",

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/fikua/fikua-vitalia/internal/directory"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/store"
+	"github.com/fikua/fikua-vitalia/internal/store/storetest"
 	"github.com/fikua/fikua-vitalia/internal/webhook"
 )
 
@@ -32,13 +32,8 @@ type env struct {
 // adapter stub, which posts its webhooks to the platform's receiver.
 func newEnv(t *testing.T, refreshOnWebhook bool) *env {
 	t.Helper()
-	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := storetest.Open(t)
 
 	stub := &adapterstub.Stub{Token: "tok", PortalURL: "https://portal.test/", WebhookSecret: secret}
 	adapterSrv := httptest.NewServer(stub.Handler())

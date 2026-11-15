@@ -11,7 +11,6 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -23,6 +22,7 @@ import (
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/idpstub"
 	"github.com/fikua/fikua-vitalia/internal/store"
+	"github.com/fikua/fikua-vitalia/internal/store/storetest"
 	"github.com/fikua/fikua-vitalia/internal/web"
 	"github.com/fikua/fikua-vitalia/internal/webhook"
 )
@@ -32,11 +32,7 @@ import (
 func TestDoctorSignsInWithDoctorID(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := storetest.Open(t)
 
 	clinic := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(clinic.Close)

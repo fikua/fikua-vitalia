@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -21,6 +20,7 @@ import (
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/idpstub"
 	"github.com/fikua/fikua-vitalia/internal/store"
+	"github.com/fikua/fikua-vitalia/internal/store/storetest"
 )
 
 type env struct {
@@ -35,11 +35,7 @@ var noFollow = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) 
 // fetches the clinic's JWKS to check its private_key_jwt assertions.
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "t.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := storetest.Open(t)
 
 	var client *doctorlogin.Client
 	clinic := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(client.JWKS()) }))
@@ -56,6 +52,7 @@ func newEnv(t *testing.T) *env {
 	idpSrv.Config.Handler = idp.Handler()
 
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	var err error
 	client, err = doctorlogin.New(doctorlogin.Config{Issuer: idpSrv.URL, ClientID: "vitalia",
 		RedirectURL: clinic.URL + "/profesional/callback", Scopes: []string{"openid", "profile", "doctorid"}, SigningKey: key})
 	if err != nil {

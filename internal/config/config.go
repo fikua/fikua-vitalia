@@ -19,7 +19,9 @@ import (
 // Config is the parsed configuration. It holds secrets: never log it whole.
 type Config struct {
 	ListenAddr string
-	DBPath     string
+	// DatabaseURL is the PostgreSQL connection URL (the role's search_path picks
+	// the schema). Holds the password: never log it.
+	DatabaseURL string
 
 	// Adapter API (server-to-server).
 	AdapterBaseURL *url.URL
@@ -108,7 +110,7 @@ func Load(getenv func(string) string) (Config, error) {
 
 	c := Config{
 		ListenAddr:         get("VITALIA_LISTEN_ADDR", ":8080"),
-		DBPath:             get("VITALIA_DB_PATH", "vitalia.db"),
+		DatabaseURL:        required("VITALIA_DATABASE_URL"),
 		AdapterToken:       strings.TrimSpace(getenv("VITALIA_ADAPTER_TOKEN")),
 		AdapterTimeout:     duration("VITALIA_ADAPTER_TIMEOUT", "15s"),
 		SignatureTolerance: duration("VITALIA_SIGNATURE_TOLERANCE", "5m"),
