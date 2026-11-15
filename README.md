@@ -60,7 +60,7 @@ internal/webhook     the clinic's webhook receiver (stores signed events)
 internal/enrollment  enrol / refresh / decide / cancel, webhook processor
 internal/doctorlogin OIDC relying party and the access rule
 internal/idpstub     simulated OpenID Provider (tests and demos)
-internal/store       SQLite (modernc.org/sqlite, no cgo)
+internal/store       PostgreSQL (pgx), embedded migrations; cmd/sqlite2pg is the one-off copy from the old SQLite
 internal/web         website, professional area, management area
 ```
 

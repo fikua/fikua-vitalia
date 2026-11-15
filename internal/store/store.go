@@ -1,77 +1,161 @@
-// Package store keeps the platform's data in SQLite.
+// Package store keeps the platform's data in PostgreSQL (the platform cluster,
+// schema "vitalia", see fikua-platform-iac).
 package store
 
 import (
 	"context"
 	"database/sql"
-	_ "embed"
+	"embed"
 	"errors"
 	"fmt"
-	"net/url"
+	"io/fs"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
 )
 
-//go:embed schema.sql
-var schema string
+//go:embed migrations/*.sql
+var migrations embed.FS
 
 // ErrNotFound is returned when a row does not exist.
 var ErrNotFound = errors.New("not found")
 
 // Store wraps the database.
 type Store struct {
-	db  *sql.DB
+	db  conn
 	now func() time.Time
 }
 
-// Open opens (and creates) the database at path.
-func Open(ctx context.Context, path string) (*Store, error) {
-	q := url.Values{}
-	q.Add("_pragma", "busy_timeout(5000)")
-	q.Add("_pragma", "journal_mode(WAL)")
-	q.Add("_pragma", "foreign_keys(1)")
-	q.Add("_pragma", "synchronous(NORMAL)")
-	db, err := sql.Open("sqlite", "file:"+path+"?"+q.Encode())
+// Open connects to Postgres with the given URL (the role's search_path selects
+// the schema) and applies the embedded migrations.
+func Open(ctx context.Context, databaseURL string) (*Store, error) {
+	raw, err := sql.Open("pgx", databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-	// One writer at a time; the load is an operator and a webhook stream.
-	db.SetMaxOpenConns(1)
-	if _, err := db.ExecContext(ctx, schema); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("apply schema: %w", err)
+	raw.SetMaxOpenConns(10)
+	raw.SetMaxIdleConns(5)
+	raw.SetConnMaxLifetime(30 * time.Minute)
+	if err := raw.PingContext(ctx); err != nil {
+		raw.Close()
+		return nil, fmt.Errorf("ping database: %w", err)
 	}
-	if err := migrate(ctx, db); err != nil {
-		db.Close()
+	if err := migrate(ctx, raw); err != nil {
+		raw.Close()
 		return nil, err
 	}
-	return &Store{db: db, now: time.Now}, nil
+	return &Store{db: conn{raw}, now: time.Now}, nil
 }
 
-// migrations add columns to tables created by earlier versions. Each one is
-// applied when its column is missing.
-var migrations = []struct{ table, column, ddl string }{
-	{"practitioners", "doctorid_iss", "ALTER TABLE practitioners ADD COLUMN doctorid_iss TEXT NOT NULL DEFAULT ''"},
-	{"practitioners", "doctorid_sub", "ALTER TABLE practitioners ADD COLUMN doctorid_sub TEXT NOT NULL DEFAULT ''"},
-}
-
+// migrate applies, in name order, every embedded migration not applied yet.
+// Each one runs in its own transaction; an advisory lock keeps two processes
+// (for example two replicas starting together) from migrating at once.
 func migrate(ctx context.Context, db *sql.DB) error {
-	for _, m := range migrations {
-		var n int
-		err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, m.table, m.column).Scan(&n)
-		if err != nil {
-			return fmt.Errorf("inspect %s: %w", m.table, err)
+	c, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection: %w", err)
+	}
+	defer c.Close()
+
+	const lockID = 7_310_243
+	if _, err := c.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
+		return fmt.Errorf("take migration lock: %w", err)
+	}
+	defer c.ExecContext(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, lockID)
+
+	if _, err := c.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+		name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
+		return fmt.Errorf("create schema_migrations: %w", err)
+	}
+	names, err := fs.Glob(migrations, "migrations/*.sql")
+	if err != nil {
+		return err
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		var applied bool
+		if err := c.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE name = $1)`, name).Scan(&applied); err != nil {
+			return fmt.Errorf("check migration %s: %w", name, err)
 		}
-		if n == 0 {
-			if _, err := db.ExecContext(ctx, m.ddl); err != nil {
-				return fmt.Errorf("migrate %s.%s: %w", m.table, m.column, err)
-			}
+		if applied {
+			continue
+		}
+		body, err := migrations.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		tx, err := c.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("apply migration %s: %w", name, err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (name) VALUES ($1)`, name); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("record migration %s: %w", name, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %s: %w", name, err)
 		}
 	}
 	return nil
+}
+
+// conn lets the queries below keep their portable "?" placeholders: every
+// statement is rewritten to Postgres' $1, $2, ... before it is sent.
+type conn struct{ *sql.DB }
+
+func (c conn) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
+	return c.DB.ExecContext(ctx, rebind(q), args...)
+}
+
+func (c conn) QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error) {
+	return c.DB.QueryContext(ctx, rebind(q), args...)
+}
+
+func (c conn) QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row {
+	return c.DB.QueryRowContext(ctx, rebind(q), args...)
+}
+
+func (c conn) BeginTx(ctx context.Context, opts *sql.TxOptions) (txn, error) {
+	t, err := c.DB.BeginTx(ctx, opts)
+	return txn{t}, err
+}
+
+type txn struct{ *sql.Tx }
+
+func (t txn) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
+	return t.Tx.ExecContext(ctx, rebind(q), args...)
+}
+
+func (t txn) QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row {
+	return t.Tx.QueryRowContext(ctx, rebind(q), args...)
+}
+
+// rebind turns "?" placeholders into $1, $2, ... None of the statements has a
+// "?" inside a string literal.
+func rebind(q string) string {
+	if !strings.Contains(q, "?") {
+		return q
+	}
+	var b strings.Builder
+	n := 0
+	for _, r := range q {
+		if r == '?' {
+			n++
+			b.WriteString("$" + strconv.Itoa(n))
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // Close closes the database.
@@ -103,7 +187,9 @@ type Practitioner struct {
 }
 
 // FindOrCreatePractitioner returns the practitioner with that pair, creating
-// it with the given details when it does not exist.
+// it with the given details when it does not exist. Two concurrent calls for
+// the same pair both get the one row: the INSERT does nothing on conflict and
+// the existing row is read instead.
 func (s *Store) FindOrCreatePractitioner(ctx context.Context, p Practitioner) (Practitioner, error) {
 	existing, err := s.practitionerByPair(ctx, p.AdministrativeNumber, p.CollegiateNumber)
 	if err == nil {
@@ -113,14 +199,18 @@ func (s *Store) FindOrCreatePractitioner(ctx context.Context, p Practitioner) (P
 		return Practitioner{}, err
 	}
 	p.CreatedAt = s.now().UTC()
-	res, err := s.db.ExecContext(ctx,
+	err = s.db.QueryRowContext(ctx,
 		`INSERT INTO practitioners (full_name, administrative_number, collegiate_number, specialty, email, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		p.FullName, p.AdministrativeNumber, p.CollegiateNumber, p.Specialty, p.Email, ts(p.CreatedAt))
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (administrative_number, collegiate_number) DO NOTHING
+		 RETURNING id`,
+		p.FullName, p.AdministrativeNumber, p.CollegiateNumber, p.Specialty, p.Email, ts(p.CreatedAt)).Scan(&p.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return s.practitionerByPair(ctx, p.AdministrativeNumber, p.CollegiateNumber)
+	}
 	if err != nil {
 		return Practitioner{}, fmt.Errorf("insert practitioner: %w", err)
 	}
-	p.ID, _ = res.LastInsertId()
 	return p, nil
 }
 
@@ -217,6 +307,9 @@ func (e Enrollment) Decoded() cgcom.Enrollment {
 	return d
 }
 
+// enrollmentLockSpace is the first key of the per-enrolment advisory locks.
+const enrollmentLockSpace = 7_310_246
+
 // Upsert outcome.
 const (
 	Applied = "applied"
@@ -238,6 +331,13 @@ func (s *Store) UpsertEnrollment(ctx context.Context, practitionerID int64, e cg
 		return "", err
 	}
 	defer tx.Rollback()
+
+	// One writer per enrolment at a time (a webhook and our own call can race):
+	// without it both could read "not stored" and insert, or both pass the
+	// staleness check and the older one win. Released at COMMIT/ROLLBACK.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(?, hashtext(?))`, enrollmentLockSpace, e.ID); err != nil {
+		return "", fmt.Errorf("lock enrollment: %w", err)
+	}
 
 	var storedUpd string
 	err = tx.QueryRowContext(ctx, `SELECT adapter_updated_at FROM enrollments WHERE id = ?`, e.ID).Scan(&storedUpd)

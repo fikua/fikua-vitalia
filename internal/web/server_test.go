@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +15,7 @@ import (
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
-	"github.com/fikua/fikua-vitalia/internal/store"
+	"github.com/fikua/fikua-vitalia/internal/store/storetest"
 	"github.com/fikua/fikua-vitalia/internal/web"
 	"github.com/fikua/fikua-vitalia/internal/webhook"
 )
@@ -31,11 +30,7 @@ func newServer(t *testing.T) *httptest.Server {
 func newServerWith(t *testing.T, cfg web.Config) *httptest.Server {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "t.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := storetest.Open(t)
 	stub := &adapterstub.Stub{PortalURL: "https://portal.test/"}
 	adapterSrv := httptest.NewServer(stub.Handler())
 	t.Cleanup(adapterSrv.Close)
