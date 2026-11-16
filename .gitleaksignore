@@ -1,0 +1,3 @@
+# did:key identifiers are public keys, not secrets (gitleaks generic-api-key false positives).
+2fd5b344f195a2ff6b6f80c2d296478df8ba710d:docs/cgcom/correspondencia.md:generic-api-key:27
+6b0d4e25a34cac14d4fba3116bd2b5cdece9fbde:internal/cgcom/didkey_test.go:generic-api-key:23
