@@ -1,0 +1,51 @@
+name: CI
+
+# Shared workflows: fikua/fikua-ci-workflows (ADR 0018). Publishes
+# fikua/vitalia on every push to main once the tests pass; deploying it is a
+# separate, manual step (fikua-platform-iac/projects/vitalia).
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: fikua/fikua-ci-workflows/.github/workflows/go-ci.yml@2d40554f8f019fc7e0968d97e6dc27f2b4778352  # v1.1.0
+    with:
+      postgres: true
+
+  gitleaks:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    uses: fikua/fikua-ci-workflows/.github/workflows/gitleaks.yml@2d40554f8f019fc7e0968d97e6dc27f2b4778352  # v1.1.0
+
+  sonar:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: fikua/fikua-ci-workflows/.github/workflows/sonar.yml@2d40554f8f019fc7e0968d97e6dc27f2b4778352  # v1.1.0
+    with:
+      postgres: true
+      coverpkg: ./internal/...
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  release:
+    needs: test
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+    uses: fikua/fikua-ci-workflows/.github/workflows/image-release.yml@2d40554f8f019fc7e0968d97e6dc27f2b4778352  # v1.1.0
+    with:
+      image: vitalia
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
