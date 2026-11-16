@@ -110,6 +110,8 @@ Start `demo-authentik` first: Authentik reads the DoctorID JWKS from the simulat
 
 Environment variables, read once at startup; the process refuses to start if one is missing or invalid. See [`.env.example`](.env.example). No secret goes in this repo or in the logs.
 
+Telemetry and audit follow the Fikua observability convention (fikua-docs `conv-observability.md`): with `OTEL_EXPORTER_OTLP_ENDPOINT` set, both binaries (`vitalia`, `fakeadapter` as `vitalia-sim`) send traces, metrics and logs to the platform Collector; without it, logs only go to stdout. Set `OTEL_RESOURCE_ATTRIBUTES=service.namespace=vitalia,deployment.environment=prd`. The audit catalogue (registrations, enrolment decisions, sign-ins, refusals; internal identifiers only) is in [`internal/audit`](internal/audit/audit.go), and every operation is counted in `vitalia.business.operations`.
+
 ## Deployment
 
 The image is `fikua/vitalia`, built by [`release.yml`](.github/workflows/release.yml) on every push to `main`. It runs on the Fikua VPS behind Traefik and Cloudflare, with the configuration in `fikua-platform-iac/projects/vitalia/`. In phase 1 the simulators run next to it; the simulated identity provider is at `vitalia-idp.fikua.com`.

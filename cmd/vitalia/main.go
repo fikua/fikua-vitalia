@@ -19,12 +19,23 @@ import (
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
 	"github.com/fikua/fikua-vitalia/internal/store"
+	"github.com/fikua/fikua-vitalia/internal/telemetry"
 	"github.com/fikua/fikua-vitalia/internal/web"
 	"github.com/fikua/fikua-vitalia/internal/webhook"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	shutdown, err := telemetry.Setup(context.Background(), "vitalia")
+	if err != nil {
+		slog.Error("telemetry", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdown(flush)
+	}()
+	logger := slog.Default()
 	if err := run(logger); err != nil {
 		logger.Error("vitalia stopped", "err", err)
 		os.Exit(1)
@@ -93,7 +104,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	srv := &http.Server{
-		Addr: cfg.ListenAddr, Handler: ui.Handler(),
+		Addr: cfg.ListenAddr, Handler: telemetry.HTTPHandler(ui.Handler()),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second,
 	}

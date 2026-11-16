@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
@@ -25,10 +26,21 @@ import (
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/idpstub"
+	"github.com/fikua/fikua-vitalia/internal/telemetry"
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	shutdown, err := telemetry.Setup(context.Background(), "vitalia-sim")
+	if err != nil {
+		slog.Error("telemetry", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdown(flush)
+	}()
+	logger := slog.Default()
 	secret := env("FAKE_WEBHOOK_SECRET", os.Getenv("VITALIA_WEBHOOK_SECRET"))
 	if len(secret) < 32 {
 		logger.Error("FAKE_WEBHOOK_SECRET (or VITALIA_WEBHOOK_SECRET) of at least 32 characters is required")
@@ -114,14 +126,14 @@ func main() {
 	apiAddr, publicAddr := env("FAKE_LISTEN_ADDR", ":8090"), env("FAKE_PUBLIC_ADDR", ":8091")
 	go func() {
 		logger.Info("simulator public listener", "addr", publicAddr, "sim_password", simPass != "")
-		srv := &http.Server{Addr: publicAddr, Handler: http.NewCrossOriginProtection().Handler(public), ReadHeaderTimeout: 10 * time.Second}
+		srv := &http.Server{Addr: publicAddr, Handler: telemetry.HTTPHandler(http.NewCrossOriginProtection().Handler(public)), ReadHeaderTimeout: 10 * time.Second}
 		if err := srv.ListenAndServe(); err != nil {
 			logger.Error("public listener stopped", "err", err)
 			os.Exit(1)
 		}
 	}()
 	logger.Info("fake enrolment API listening", "addr", apiAddr, "webhook_url", stub.WebhookURL, "token_required", stub.Token != "")
-	srv := &http.Server{Addr: apiAddr, Handler: api, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: apiAddr, Handler: telemetry.HTTPHandler(api), ReadHeaderTimeout: 10 * time.Second}
 	if err := srv.ListenAndServe(); err != nil {
 		logger.Error("fake adapter stopped", "err", err)
 		os.Exit(1)

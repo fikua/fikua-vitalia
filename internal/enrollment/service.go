@@ -15,6 +15,8 @@ import (
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/directory"
 	"github.com/fikua/fikua-vitalia/internal/store"
+
+	"github.com/fikua/fikua-vitalia/internal/audit"
 )
 
 // Service orchestrates the store and the adapter client.
@@ -133,6 +135,7 @@ func (s *Service) enrol(ctx context.Context, p store.Practitioner) error {
 	if _, err := s.store.UpsertEnrollment(ctx, p.ID, res.Enrollment, res.Raw, true); err != nil {
 		return fmt.Errorf("store enrollment: %w", err)
 	}
+	audit.EnrollmentRequested(ctx, p.ID, res.Enrollment.ID)
 	// A webhook may have arrived before this response: let the processor
 	// pick up any event that was waiting for this enrolment.
 	s.Wake()

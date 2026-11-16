@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/fikua/fikua-vitalia/internal/audit"
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/store"
@@ -101,6 +102,7 @@ func (s *Server) proCallback(w http.ResponseWriter, r *http.Request) {
 			detail = "Has cancelado el inicio de sesión o no se ha podido verificar tu DoctorID."
 		}
 		s.logger.Warn("DoctorID login failed", "err", err)
+		audit.AuthRejected(ctx, "profesional", doctorlogin.ReasonIdPError)
 		s.recordLogin(r, store.LoginEvent{Outcome: store.LoginDenied, Reason: doctorlogin.ReasonIdPError, Detail: err.Error()})
 		w.WriteHeader(http.StatusUnauthorized)
 		s.render(w, r, "pro_denied.html", map[string]any{"Title": "No se ha podido iniciar sesión", "Area": "pro",
@@ -121,6 +123,7 @@ func (s *Server) proCallback(w http.ResponseWriter, r *http.Request) {
 			ev.Detail = "estado " + string(decision.State)
 		}
 		s.recordLogin(r, ev)
+		audit.AuthRejected(ctx, "profesional", string(decision.Reason))
 		s.logger.Info("DoctorID login denied", "reason", decision.Reason)
 		w.WriteHeader(http.StatusForbidden)
 		s.render(w, r, "pro_denied.html", map[string]any{"Title": "Acceso no permitido", "Area": "pro",
@@ -130,6 +133,7 @@ func (s *Server) proCallback(w http.ResponseWriter, r *http.Request) {
 	ev.Outcome = store.LoginGranted
 	s.recordLogin(r, ev)
 	s.logger.Info("DoctorID login granted", "practitioner_id", decision.Practitioner.ID)
+	audit.ProfessionalSignedIn(ctx, decision.Practitioner.ID)
 	http.SetCookie(w, &http.Cookie{Name: doctorCookie, Path: "/", HttpOnly: true, Secure: s.cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode, MaxAge: int(sessionTTL.Seconds()),
 		Value: s.doctors.createWith(&doctorSession{PractitionerID: decision.Practitioner.ID, Identity: id, LoginAt: time.Now()})})
@@ -181,6 +185,7 @@ func (s *Server) unbind(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	audit.DoctorIDUnbound(r.Context(), id)
 	setFlash(w, flash{Kind: "ok", Text: "DoctorID desvinculado. El próximo acceso con DoctorID volverá a vincularse."})
 	http.Redirect(w, r, fmt.Sprintf("/gestion/profesionales/%d", id), http.StatusSeeOther)
 }

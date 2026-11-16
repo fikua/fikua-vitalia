@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/fikua/fikua-vitalia/internal/audit"
 )
 
 // Sink stores received requests.
@@ -64,7 +66,8 @@ func (h *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			h.Logger.Error("store rejected webhook", "err", err)
 		}
-		h.Logger.Warn("webhook rejected", "reason", verr.Error(), "remote", r.RemoteAddr)
+		h.Logger.Warn("webhook rejected", "reason", verr.Error())
+		audit.WebhookRejected(r.Context(), "invalid_signature")
 		writeProblem(w, http.StatusUnauthorized, "invalid_signature", "Missing, malformed or wrong signature.")
 		return
 	}

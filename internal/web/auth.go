@@ -9,6 +9,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/fikua/fikua-vitalia/internal/audit"
 )
 
 const (
@@ -106,7 +108,8 @@ func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 	userOK := equalSecret(r.PostFormValue("user"), s.cfg.UIUser)
 	passOK := equalSecret(r.PostFormValue("password"), s.cfg.UIPassword)
 	if !userOK || !passOK {
-		s.logger.Warn("failed login", "remote", r.RemoteAddr)
+		s.logger.Warn("failed login")
+		audit.AuthRejected(r.Context(), "gestion", "invalid_credentials")
 		w.WriteHeader(http.StatusUnauthorized)
 		s.renderLogin(w, r, "Usuario o contraseña incorrectos.")
 		return
@@ -161,17 +164,20 @@ func (s *Server) staffCallback(w http.ResponseWriter, r *http.Request) {
 	id, err := s.cfg.StaffLogin.Finish(r.Context(), r.URL.Query(), browserState)
 	if err != nil {
 		s.logger.Warn("staff login failed", "err", err)
+		audit.AuthRejected(r.Context(), "gestion", "idp_error")
 		w.WriteHeader(http.StatusUnauthorized)
 		s.renderLogin(w, r, "No se ha podido completar el inicio de sesión con la cuenta de la clínica.")
 		return
 	}
 	if !slices.Contains(id.Groups, s.cfg.StaffGroup) {
-		s.logger.Warn("staff login denied: not in the staff group", "subject", id.Subject, "group", s.cfg.StaffGroup)
+		s.logger.Warn("staff login denied: not in the staff group", "group", s.cfg.StaffGroup)
+		audit.AuthRejected(r.Context(), "gestion", "not_staff")
 		w.WriteHeader(http.StatusForbidden)
 		s.renderLogin(w, r, "Tu cuenta de la clínica no tiene acceso a la gestión de profesionales.")
 		return
 	}
-	s.logger.Info("staff login granted", "subject", id.Subject, "username", id.Username)
+	s.logger.Info("staff login granted")
+	audit.Count(r.Context(), "staff.sign_in", "success", "")
 	s.startStaffSessionWith(w, r, &staffSession{IDToken: id.RawIDToken})
 }
 

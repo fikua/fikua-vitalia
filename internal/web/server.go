@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fikua/fikua-vitalia/internal/audit"
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
@@ -266,6 +267,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	audit.PractitionerRegistered(r.Context(), p.ID)
 	var dirErr *enrollment.DirectoryError
 	switch {
 	case errors.As(err, &dirErr):
@@ -371,15 +373,19 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var ok string
+	var audited func()
 	switch r.PathValue("action") {
 	case "refrescar":
 		err, ok = s.service.Refresh(ctx, id), "Estado actualizado desde el sistema DoctorID."
 	case "confirmar":
 		err, ok = s.service.Decide(ctx, id, cgcom.Confirm), "Datos confirmados. El profesional queda verificado."
+		audited = func() { audit.EnrollmentDecided(ctx, e.PractitionerID, id, "confirmed") }
 	case "rechazar":
 		err, ok = s.service.Decide(ctx, id, cgcom.Reject), "Datos rechazados. La inscripción queda cancelada."
+		audited = func() { audit.EnrollmentDecided(ctx, e.PractitionerID, id, "rejected") }
 	case "cancelar":
 		err, ok = s.service.Cancel(ctx, id), "Inscripción cancelada."
+		audited = func() { audit.EnrollmentCancelled(ctx, e.PractitionerID, id) }
 	default:
 		http.NotFound(w, r)
 		return
@@ -387,6 +393,9 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.flashError(w, "La operación no se ha completado.", err)
 	} else {
+		if audited != nil {
+			audited()
+		}
 		setFlash(w, flash{Kind: "ok", Text: ok})
 	}
 	http.Redirect(w, r, fmt.Sprintf("/gestion/profesionales/%d", e.PractitionerID), http.StatusSeeOther)

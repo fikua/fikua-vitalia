@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fikua/fikua-vitalia/internal/audit"
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
@@ -339,8 +340,8 @@ func (s *Store) UpsertEnrollment(ctx context.Context, practitionerID int64, e cg
 		return "", fmt.Errorf("lock enrollment: %w", err)
 	}
 
-	var storedUpd string
-	err = tx.QueryRowContext(ctx, `SELECT adapter_updated_at FROM enrollments WHERE id = ?`, e.ID).Scan(&storedUpd)
+	var storedUpd, storedState string
+	err = tx.QueryRowContext(ctx, `SELECT adapter_updated_at, state FROM enrollments WHERE id = ?`, e.ID).Scan(&storedUpd, &storedState)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		if practitionerID == 0 {
@@ -374,7 +375,13 @@ func (s *Store) UpsertEnrollment(ctx context.Context, practitionerID int64, e cg
 			return "", fmt.Errorf("clear invalidation: %w", err)
 		}
 	}
-	return Applied, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	if storedState != "" && storedState != string(e.State) {
+		audit.EnrollmentStatusChanged(ctx, e.ID, string(e.State))
+	}
+	return Applied, nil
 }
 
 // MarkInvalidated records a doctorid_invalidated notice.
