@@ -138,9 +138,9 @@ func TestWebhookAndHealthNeedNoSession(t *testing.T) {
 	if status != http.StatusUnauthorized {
 		t.Fatalf("badly signed webhook: %d", status)
 	}
-	resp, err := http.Get(srv.URL + "/healthz")
+	resp, err := http.Get(srv.URL + "/health")
 	if err != nil || resp.StatusCode != http.StatusOK {
-		t.Fatalf("healthz: %v %v", resp, err)
+		t.Fatalf("health: %v %v", resp, err)
 	}
 	resp.Body.Close()
 }

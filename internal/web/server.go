@@ -123,7 +123,7 @@ func (s *Server) Handler() http.Handler {
 
 	root := http.NewServeMux()
 	root.Handle("POST "+WebhookPath, s.webhook) // server-to-server: no session, no CSRF check
-	root.HandleFunc("GET /healthz", s.health)
+	root.HandleFunc("GET /health", s.health)
 	static, _ := fs.Sub(staticFS, "static")
 	root.Handle("GET /static/", staticCache(http.StripPrefix("/static/", http.FileServerFS(static))))
 
