@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -109,7 +110,7 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	c := Config{
-		ListenAddr:         get("VITALIA_LISTEN_ADDR", ":8080"),
+		ListenAddr:         ListenAddr(),
 		DatabaseURL:        required("VITALIA_DATABASE_URL"),
 		AdapterToken:       strings.TrimSpace(getenv("VITALIA_ADAPTER_TOKEN")),
 		AdapterTimeout:     duration("VITALIA_ADAPTER_TIMEOUT", "15s"),
@@ -209,4 +210,12 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, errors.Join(errs...)
 	}
 	return c, nil
+}
+
+// ListenAddr is the address vitalia listens on (VITALIA_LISTEN_ADDR, default :8080).
+func ListenAddr() string {
+	if v := strings.TrimSpace(os.Getenv("VITALIA_LISTEN_ADDR")); v != "" {
+		return v
+	}
+	return ":8080"
 }

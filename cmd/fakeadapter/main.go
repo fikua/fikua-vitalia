@@ -25,11 +25,15 @@ import (
 	"github.com/fikua/fikua-vitalia/internal/adapterstub"
 	"github.com/fikua/fikua-vitalia/internal/cgcom"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
+	"github.com/fikua/fikua-vitalia/internal/health"
 	"github.com/fikua/fikua-vitalia/internal/idpstub"
 	"github.com/fikua/fikua-vitalia/internal/telemetry"
 )
 
 func main() {
+	if health.IsHealthcheck() {
+		os.Exit(health.Probe(env("FAKE_PUBLIC_ADDR", ":8091")))
+	}
 	shutdown, err := telemetry.Setup(context.Background(), "vitalia-sim")
 	if err != nil {
 		slog.Error("telemetry", "err", err)
@@ -64,6 +68,7 @@ func main() {
 
 	// Public listener: identity provider and simulator page.
 	public := http.NewServeMux()
+	public.HandleFunc("GET /health", health.Handler("", nil))
 	public.Handle("GET /_sim", guard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_ = simPage.Execute(w, map[string]any{"Rows": stub.Snapshot(), "Users": stub.SCIMUsers(), "Actions": adapterstub.Actions, "Msg": r.URL.Query().Get("msg")})

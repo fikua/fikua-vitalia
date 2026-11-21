@@ -18,6 +18,7 @@ import (
 	"github.com/fikua/fikua-vitalia/internal/directory"
 	"github.com/fikua/fikua-vitalia/internal/doctorlogin"
 	"github.com/fikua/fikua-vitalia/internal/enrollment"
+	"github.com/fikua/fikua-vitalia/internal/health"
 	"github.com/fikua/fikua-vitalia/internal/store"
 	"github.com/fikua/fikua-vitalia/internal/telemetry"
 	"github.com/fikua/fikua-vitalia/internal/web"
@@ -25,6 +26,9 @@ import (
 )
 
 func main() {
+	if health.IsHealthcheck() {
+		os.Exit(health.Probe(config.ListenAddr()))
+	}
 	shutdown, err := telemetry.Setup(context.Background(), "vitalia")
 	if err != nil {
 		slog.Error("telemetry", "err", err)
