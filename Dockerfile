@@ -1,7 +1,7 @@
 # Clínica Vitalia — multi-stage build. Pure Go (no cgo), so the binaries are
 # static and run on distroless. sqlite2pg is the one-off SQLite -> PostgreSQL
 # copy tool used for the move to the platform cluster.
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
